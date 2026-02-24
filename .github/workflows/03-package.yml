@@ -1,1 +1,120 @@
+name: 03 - SudoStudio Enterprise Packager
 
+on:
+  workflow_dispatch:
+    inputs:
+      backend_run_id:
+        description: "Backend Run ID"
+        required: true
+      runtime_run_id:
+        description: "Runtime Run ID"
+        required: true
+      confirm:
+        description: "Type I_CONFIRM_RUN"
+        required: true
+
+jobs:
+  package:
+    if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
+    runs-on: windows-latest
+
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+
+      # ===============================
+      # DOWNLOAD SOURCE REPO
+      # ===============================
+      - name: Download sudo-studio source
+        uses: actions/checkout@v4
+        with:
+          repository: juleszackaria-lab/sudo-studio
+          path: source
+          token: ${{ secrets.PAT_DOWNLOAD }}
+
+      # ===============================
+      # DOWNLOAD ARTIFACTS
+      # ===============================
+      - name: Download backend artifact
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackaria-lab/sudo-studio
+          name: backend-exe
+          path: build/backend
+          run_id: ${{ github.event.inputs.backend_run_id }}
+          github_token: ${{ secrets.PAT_DOWNLOAD }}
+
+      - name: Download runtime artifact
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackaria-lab/sudo-studio
+          name: runtime-exe
+          path: build/runtime
+          run_id: ${{ github.event.inputs.runtime_run_id }}
+          github_token: ${{ secrets.PAT_DOWNLOAD }}
+
+      # ===============================
+      # DOWNLOAD VSCODIUM
+      # ===============================
+      - name: Download VSCodium
+        run: curl -L -o vscodium.zip https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip
+
+      - name: Extract VSCodium
+        run: powershell Expand-Archive vscodium.zip -DestinationPath vscodium
+
+      # ===============================
+      # PREPARE STRUCTURE
+      # ===============================
+      - name: Prepare SudoStudio folder
+        run: |
+          mkdir vscodium\SudoStudio
+          copy build\backend\backend.exe vscodium\SudoStudio\
+          copy build\runtime\server.exe vscodium\SudoStudio\runtime.exe
+          xcopy /E /I source\web-ui vscodium\SudoStudio\web-ui\
+          copy source\product.json vscodium\SudoStudio\product.json
+          copy source\setup.bat vscodium\SudoStudio\
+          copy source\setup.sh vscodium\SudoStudio\
+          copy source\installer.iss installer.iss
+
+      # ===============================
+      # CREATE AUTO START SCRIPT
+      # ===============================
+      - name: Create auto-start script
+        shell: cmd
+        run: |
+          echo @echo off > vscodium\SudoStudio\start.bat
+          echo cd /d "%%~dp0" >> vscodium\SudoStudio\start.bat
+          echo start backend.exe >> vscodium\SudoStudio\start.bat
+          echo start runtime.exe >> vscodium\SudoStudio\start.bat
+          echo timeout /t 3 >> vscodium\SudoStudio\start.bat
+          echo start ..\codium.exe --user-data-dir . --extensions-dir SudoStudio >> vscodium\SudoStudio\start.bat
+
+      - name: Create launcher
+        shell: cmd
+        run: |
+          echo @echo off > SudoStudio.cmd
+          echo cd /d "%%~dp0vscodium\SudoStudio" >> SudoStudio.cmd
+          echo call start.bat >> SudoStudio.cmd
+
+      # ===============================
+      # INSTALL INNO SETUP
+      # ===============================
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      # ===============================
+      # BUILD INSTALLER
+      # ===============================
+      - name: Build installer
+        run: iscc installer.iss
+
+      # ===============================
+      # UPLOAD FINAL EXE
+      # ===============================
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Enterprise-Installer
+          path: Output\*.exe
