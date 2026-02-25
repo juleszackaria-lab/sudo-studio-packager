@@ -16,7 +16,7 @@ on:
 jobs:
   package:
     if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     permissions:
       actions: read
