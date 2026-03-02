@@ -108,7 +108,7 @@ jobs:
       # BUILD INSTALLER
       # ===============================
       - name: Build installer
-        run: iscc installer.iss
+        run: iscc installer.iss /DSourceFolder="%cd%"
 
       # ===============================
       # UPLOAD FINAL EXE
