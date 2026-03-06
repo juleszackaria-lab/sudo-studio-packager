@@ -69,15 +69,15 @@ jobs:
       # ===============================
       - name: Prepare clean build folder
         run: |
-          REM Copy backend and runtime to app folder
+          :: Copy backend and runtime to app folder
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
           
-          REM Copy web UI and configuration
+          :: Copy web UI and configuration
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
           copy source\product.json build\SudoStudio\app\product.json
           
-          REM Copy setup scripts to root of SudoStudio folder
+          :: Copy setup scripts to root of SudoStudio folder
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
@@ -92,19 +92,19 @@ jobs:
             echo setlocal enabledelayedexpansion
             echo title SudoStudio Enterprise
             echo.
-            echo REM Get the current script directory
+            echo :: Get the current script directory
             echo for /f "tokens=*" %%%%a in ('cd') do set SCRIPT_DIR=%%%%a
             echo.
-            echo REM Start backend service in background
+            echo :: Start backend service in background
             echo start "" "!SCRIPT_DIR!\app\backend.exe"
             echo.
-            echo REM Start runtime server in background
+            echo :: Start runtime server in background
             echo start "" "!SCRIPT_DIR!\app\runtime.exe"
             echo.
-            echo REM Wait for services to initialize
+            echo :: Wait for services to initialize
             echo timeout /t 3 /nobreak
             echo.
-            echo REM Launch VSCodium with SudoStudio configuration
+            echo :: Launch VSCodium with SudoStudio configuration
             echo start "" "!SCRIPT_DIR!\app\codium.exe" --user-data-dir "!SCRIPT_DIR!\data" --extensions-dir "!SCRIPT_DIR!\extensions" --folder "!SCRIPT_DIR!\app\web-ui"
           ) > build\SudoStudio\start.bat
 
@@ -148,7 +148,7 @@ jobs:
           [Run]
           Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec; WorkingDir: "{app}"
           '@
-          
+
           Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
 
       # ===============================
