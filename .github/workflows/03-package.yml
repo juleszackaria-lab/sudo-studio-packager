@@ -68,6 +68,7 @@ jobs:
       # PREPARE CLEAN BUILD STRUCTURE
       # ===============================
       - name: Prepare clean build folder
+        Shell: cmd
         run: |
           :: Copy backend and runtime to app folder
           copy build\backend\backend.exe build\SudoStudio\app\
