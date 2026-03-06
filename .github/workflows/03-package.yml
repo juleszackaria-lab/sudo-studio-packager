@@ -62,41 +62,51 @@ jobs:
         run: curl -L -o vscodium.zip https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip
 
       - name: Extract VSCodium
-        run: powershell Expand-Archive vscodium.zip -DestinationPath vscodium
+        run: powershell Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
 
       # ===============================
-      # PREPARE STRUCTURE
+      # PREPARE CLEAN BUILD STRUCTURE
       # ===============================
-      - name: Prepare SudoStudio folder
+      - name: Prepare clean build folder
         run: |
-          mkdir vscodium\SudoStudio
-          copy build\backend\backend.exe vscodium\SudoStudio\
-          copy build\runtime\server.exe vscodium\SudoStudio\runtime.exe
-          xcopy /E /I source\web-ui vscodium\SudoStudio\web-ui\
-          copy source\product.json vscodium\SudoStudio\product.json
-          copy source\setup.bat vscodium\SudoStudio\
-          copy source\setup.sh vscodium\SudoStudio\
-          copy source\installer.iss installer.iss
+          REM Copy backend and runtime to app folder
+          copy build\backend\backend.exe build\SudoStudio\app\
+          copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
+          
+          REM Copy web UI and configuration
+          xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
+          copy source\product.json build\SudoStudio\app\product.json
+          
+          REM Copy setup scripts to root of SudoStudio folder
+          copy source\setup.bat build\SudoStudio\
+          copy source\setup.sh build\SudoStudio\
 
       # ===============================
       # CREATE AUTO START SCRIPT
       # ===============================
-      - name: Create auto-start script
+      - name: Create start.bat script
         shell: cmd
         run: |
-          echo @echo off > vscodium\SudoStudio\start.bat
-          echo cd /d "%%~dp0" >> vscodium\SudoStudio\start.bat
-          echo start backend.exe >> vscodium\SudoStudio\start.bat
-          echo start runtime.exe >> vscodium\SudoStudio\start.bat
-          echo timeout /t 3 >> vscodium\SudoStudio\start.bat
-          echo start ..\codium.exe --user-data-dir . --extensions-dir SudoStudio >> vscodium\SudoStudio\start.bat
-
-      - name: Create launcher
-        shell: cmd
-        run: |
-          echo @echo off > SudoStudio.cmd
-          echo cd /d "%%~dp0vscodium\SudoStudio" >> SudoStudio.cmd
-          echo call start.bat >> SudoStudio.cmd
+          (
+            echo @echo off
+            echo setlocal enabledelayedexpansion
+            echo title SudoStudio Enterprise
+            echo.
+            echo REM Get the current script directory
+            echo for /f "tokens=*" %%%%a in ('cd') do set SCRIPT_DIR=%%%%a
+            echo.
+            echo REM Start backend service in background
+            echo start "" "!SCRIPT_DIR!\app\backend.exe"
+            echo.
+            echo REM Start runtime server in background
+            echo start "" "!SCRIPT_DIR!\app\runtime.exe"
+            echo.
+            echo REM Wait for services to initialize
+            echo timeout /t 3 /nobreak
+            echo.
+            echo REM Launch VSCodium with SudoStudio configuration
+            echo start "" "!SCRIPT_DIR!\app\codium.exe" --user-data-dir "!SCRIPT_DIR!\data" --extensions-dir "!SCRIPT_DIR!\extensions" --folder "!SCRIPT_DIR!\app\web-ui"
+          ) > build\SudoStudio\start.bat
 
       # ===============================
       # INSTALL INNO SETUP
@@ -105,10 +115,60 @@ jobs:
         run: choco install innosetup -y
 
       # ===============================
+      # GENERATE INSTALLER CONFIGURATION
+      # ===============================
+      - name: Generate installer.iss
+        shell: powershell
+        run: |
+          $issContent = @'
+          [Setup]
+          AppName=SudoStudio Enterprise
+          AppVersion=1.0.0
+          AppPublisher=SudoStudio Lab
+          AppPublisherURL=https://github.com/juleszackaria-lab/sudo-studio
+          AppSupportURL=https://github.com/juleszackaria-lab/sudo-studio
+          AppUpdatesURL=https://github.com/juleszackaria-lab/sudo-studio
+          DefaultDirName={autopf}\SudoStudio
+          DefaultGroupName=SudoStudio
+          OutputDir=Output
+          OutputBaseFilename=SudoStudio-Enterprise-Setup
+          Compression=lz4
+          SolidCompression=yes
+          PrivilegesRequired=admin
+          ArchitecturesInstallIn64BitMode=x64
+          
+          [Files]
+          Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          
+          [Icons]
+          Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Comment: "Launch SudoStudio Enterprise"
+          Name: "{group}\Uninstall SudoStudio"; Filename: "{uninstallexe}"
+          Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Comment: "Launch SudoStudio Enterprise"
+          
+          [Run]
+          Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec; WorkingDir: "{app}"
+          '@
+          
+          Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
+
+      # ===============================
       # BUILD INSTALLER
       # ===============================
       - name: Build installer
-        run: iscc installer.iss /DSourceFolder="%cd%"
+        run: iscc installer.iss
+
+      # ===============================
+      # VERIFY BUILD OUTPUT
+      # ===============================
+      - name: Verify build output
+        run: |
+          echo === Build folder structure ===
+          tree /f build\SudoStudio\ 2>nul || dir /s /b build\SudoStudio\
+          echo.
+          echo === Output folder contents ===
+          dir Output\
+          echo.
+          echo === Installer created successfully ===
 
       # ===============================
       # UPLOAD FINAL EXE
