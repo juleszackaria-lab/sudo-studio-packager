@@ -12,7 +12,8 @@ on:
       confirm:
         description: "Type I_CONFIRM_RUN"
         required: true
-
+  
+# trigger rebuild
 jobs:
   package:
     if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
