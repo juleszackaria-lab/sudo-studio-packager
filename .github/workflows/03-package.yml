@@ -12,7 +12,7 @@ on:
       confirm:
         description: "Type I_CONFIRM_RUN"
         required: true
-  
+
 jobs:
   package:
     if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
@@ -58,12 +58,11 @@ jobs:
       - name: Prepare clean build folder
         shell: cmd
         run: |
+          mkdir build\SudoStudio\app
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
-          
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
           copy source\product.json build\SudoStudio\app\product.json
-          
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
@@ -71,19 +70,14 @@ jobs:
         shell: cmd
         run: |
           (
-            echo @echo off
-            echo setlocal enabledelayedexpansion
-            echo title SudoStudio Enterprise
-            echo.
-            echo for /f "tokens=*" %%%%a in ('cd') do set SCRIPT_DIR=%%%%a
-            echo.
-            echo start "" "!SCRIPT_DIR!\app\backend.exe"
-            echo.
-            echo start "" "!SCRIPT_DIR!\app\runtime.exe"
-            echo.
-            echo timeout /t 3 /nobreak
-            echo.
-            echo start "" "!SCRIPT_DIR!\app\codium.exe" --user-data-dir "!SCRIPT_DIR!\data" --extensions-dir "!SCRIPT_DIR!\extensions" --folder "!SCRIPT_DIR!\app\web-ui"
+          echo @echo off
+          echo title SudoStudio Enterprise
+          echo set SCRIPT_DIR=%%~dp0
+          echo.
+          echo start "" "%%SCRIPT_DIR%%app\backend.exe"
+          echo start "" "%%SCRIPT_DIR%%app\runtime.exe"
+          echo timeout /t 3 /nobreak
+          echo start "" "%%SCRIPT_DIR%%app\codium.exe" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui"
           ) > build\SudoStudio\start.bat
 
       - name: Install Inno Setup
@@ -97,28 +91,24 @@ jobs:
           AppName=SudoStudio Enterprise
           AppVersion=1.0.0
           AppPublisher=SudoStudio Lab
-          AppPublisherURL=https://github.com/juleszackaria-lab/sudo-studio
-          AppSupportURL=https://github.com/juleszackaria-lab/sudo-studio
-          AppUpdatesURL=https://github.com/juleszackaria-lab/sudo-studio
           DefaultDirName={autopf}\SudoStudio
           DefaultGroupName=SudoStudio
           OutputDir=Output
           OutputBaseFilename=SudoStudio-Enterprise-Setup
-          Compression=lz4
+          Compression=lzma
           SolidCompression=yes
           PrivilegesRequired=admin
           ArchitecturesInstallIn64BitMode=x64
-          
+
           [Files]
           Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-          
+
           [Icons]
-          Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Comment: "Launch SudoStudio Enterprise"
-          Name: "{group}\Uninstall SudoStudio"; Filename: "{uninstallexe}"
-          Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Comment: "Launch SudoStudio Enterprise"
-          
+          Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
+          Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
+
           [Run]
-          Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec; WorkingDir: "{app}"
+          Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
           '@
 
           Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
@@ -128,13 +118,8 @@ jobs:
 
       - name: Verify build output
         run: |
-          echo === Build folder structure ===
-          tree /f build\SudoStudio\ 2>nul || dir /s /b build\SudoStudio\
-          echo.
-          echo === Output folder contents ===
+          dir build\SudoStudio\
           dir Output\
-          echo.
-          echo === Installer created successfully ===
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
