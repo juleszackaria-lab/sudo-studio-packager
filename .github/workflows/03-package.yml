@@ -13,11 +13,10 @@ on:
         description: "Type I_CONFIRM_RUN"
         required: true
   
-# trigger rebuild
 jobs:
   package:
     if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     permissions:
       actions: read
@@ -25,9 +24,6 @@ jobs:
 
     steps:
 
-      # ===============================
-      # DOWNLOAD SOURCE REPO
-      # ===============================
       - name: Download sudo-studio source
         uses: actions/checkout@v4
         with:
@@ -35,9 +31,6 @@ jobs:
           path: source
           token: ${{ secrets.PAT_DOWNLOAD }}
 
-      # ===============================
-      # DOWNLOAD ARTIFACTS
-      # ===============================
       - name: Download backend artifact
         uses: dawidd6/action-download-artifact@v5
         with:
@@ -56,36 +49,24 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      # ===============================
-      # DOWNLOAD VSCODIUM
-      # ===============================
       - name: Download VSCodium
         run: curl -L -o vscodium.zip https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip
 
       - name: Extract VSCodium
         run: powershell Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
 
-      # ===============================
-      # PREPARE CLEAN BUILD STRUCTURE
-      # ===============================
       - name: Prepare clean build folder
-        Shell: cmd
+        shell: cmd
         run: |
-          :: Copy backend and runtime to app folder
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
           
-          :: Copy web UI and configuration
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
           copy source\product.json build\SudoStudio\app\product.json
           
-          :: Copy setup scripts to root of SudoStudio folder
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
-      # ===============================
-      # CREATE AUTO START SCRIPT
-      # ===============================
       - name: Create start.bat script
         shell: cmd
         run: |
@@ -94,31 +75,20 @@ jobs:
             echo setlocal enabledelayedexpansion
             echo title SudoStudio Enterprise
             echo.
-            echo :: Get the current script directory
             echo for /f "tokens=*" %%%%a in ('cd') do set SCRIPT_DIR=%%%%a
             echo.
-            echo :: Start backend service in background
             echo start "" "!SCRIPT_DIR!\app\backend.exe"
             echo.
-            echo :: Start runtime server in background
             echo start "" "!SCRIPT_DIR!\app\runtime.exe"
             echo.
-            echo :: Wait for services to initialize
             echo timeout /t 3 /nobreak
             echo.
-            echo :: Launch VSCodium with SudoStudio configuration
             echo start "" "!SCRIPT_DIR!\app\codium.exe" --user-data-dir "!SCRIPT_DIR!\data" --extensions-dir "!SCRIPT_DIR!\extensions" --folder "!SCRIPT_DIR!\app\web-ui"
           ) > build\SudoStudio\start.bat
 
-      # ===============================
-      # INSTALL INNO SETUP
-      # ===============================
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # ===============================
-      # GENERATE INSTALLER CONFIGURATION
-      # ===============================
       - name: Generate installer.iss
         shell: powershell
         run: |
@@ -153,15 +123,9 @@ jobs:
 
           Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
 
-      # ===============================
-      # BUILD INSTALLER
-      # ===============================
       - name: Build installer
         run: iscc installer.iss
 
-      # ===============================
-      # VERIFY BUILD OUTPUT
-      # ===============================
       - name: Verify build output
         run: |
           echo === Build folder structure ===
@@ -172,9 +136,6 @@ jobs:
           echo.
           echo === Installer created successfully ===
 
-      # ===============================
-      # UPLOAD FINAL EXE
-      # ===============================
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
