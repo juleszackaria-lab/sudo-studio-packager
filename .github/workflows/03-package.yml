@@ -52,13 +52,23 @@ jobs:
       - name: Download VSCodium
         run: curl -L -o vscodium.zip https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip
 
+      # ✅ Modification 1 : création des dossiers avant extraction
+      - name: Create build directories
+        shell: cmd
+        run: |
+          mkdir build\SudoStudio
+          mkdir build\SudoStudio\app
+
+      # ✅ Modification 2 : extraction + déplacement de codium.exe
       - name: Extract VSCodium
-        run: powershell Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
+        shell: powershell
+        run: |
+          Expand-Archive vscodium.zip -DestinationPath build\temp
+          Move-Item build\temp\VSCodium-win32-x64\* build\SudoStudio\app\
 
       - name: Prepare clean build folder
         shell: cmd
         run: |
-          mkdir build\SudoStudio\app
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
