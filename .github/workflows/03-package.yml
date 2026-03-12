@@ -49,12 +49,11 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      # ✅ SEULE MODIFICATION : téléchargement VSCodium
       - name: Download VSCodium
         shell: powershell
         run: |
           Invoke-WebRequest `
-            -Uri "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip" `
+            -Uri "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64.zip" `
             -OutFile "vscodium.zip"
 
       - name: Create build directories
