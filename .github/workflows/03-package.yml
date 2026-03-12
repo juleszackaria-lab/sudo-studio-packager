@@ -49,17 +49,20 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
+      # ✅ SEULE MODIFICATION : téléchargement VSCodium
       - name: Download VSCodium
-        run: curl -L -o vscodium.zip https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip
+        shell: powershell
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-1.90.0.0.zip" `
+            -OutFile "vscodium.zip"
 
-      # ✅ Modification 1 : création des dossiers avant extraction
       - name: Create build directories
         shell: cmd
         run: |
           mkdir build\SudoStudio
           mkdir build\SudoStudio\app
 
-      # ✅ Modification 2 : extraction + déplacement de codium.exe
       - name: Extract VSCodium
         shell: powershell
         run: |
