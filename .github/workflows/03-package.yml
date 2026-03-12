@@ -49,12 +49,18 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
+      # Download VSCodium (robuste)
       - name: Download VSCodium
         shell: powershell
         run: |
-          Invoke-WebRequest `
-            -Uri "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64.zip" `
-            -OutFile "vscodium.zip"
+          $url = "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-archive.zip"
+          $output = "vscodium.zip"
+          Invoke-WebRequest -Uri $url -OutFile $output -Headers @{ "User-Agent"="GitHubActions" }
+
+          if (!(Test-Path $output)) {
+            Write-Error "VSCodium download failed"
+            exit 1
+          }
 
       - name: Create build directories
         shell: cmd
