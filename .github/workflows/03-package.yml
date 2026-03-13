@@ -61,8 +61,12 @@ jobs:
             exit 1
           }
 
-      - name: Extract VSCodium
-        run: powershell Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
+      - name: Extract VSCodium (auto detect folder)
+        shell: powershell
+        run: |
+          Expand-Archive vscodium.zip -DestinationPath build\temp
+          $codiumFolder = Get-ChildItem build\temp -Directory | Select-Object -First 1
+          Move-Item "$($codiumFolder.FullName)\*" build\SudoStudio\app\
 
       - name: Prepare clean build folder
         shell: cmd
