@@ -59,10 +59,8 @@ jobs:
       - name: Download VSCodium
         shell: powershell
         run: |
-          Invoke-WebRequest `
-            -Uri "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-archive.zip" `
-            -OutFile "vscodium.zip" `
-            -Headers @{ "User-Agent" = "GitHubActions" }
+          $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
+          Invoke-WebRequest -Uri $url -OutFile "vscodium.zip"
 
       - name: Verify VSCodium download
         shell: powershell
