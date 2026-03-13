@@ -49,9 +49,20 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Download VSCodium
+      - name: Prepare build folders
+        shell: cmd
         run: |
-          curl -L -H "User-Agent: GitHubActions" -o vscodium.zip https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-archive.zip
+          mkdir build
+          mkdir build\SudoStudio
+          mkdir build\SudoStudio\app
+
+      - name: Download VSCodium
+        shell: powershell
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64-archive.zip" `
+            -OutFile "vscodium.zip" `
+            -Headers @{ "User-Agent" = "GitHubActions" }
 
       - name: Verify VSCodium download
         shell: powershell
@@ -61,17 +72,14 @@ jobs:
             exit 1
           }
 
-      - name: Extract VSCodium (auto detect folder)
+      - name: Extract VSCodium
         shell: powershell
         run: |
-          Expand-Archive vscodium.zip -DestinationPath build\temp
-          $codiumFolder = Get-ChildItem build\temp -Directory | Select-Object -First 1
-          Move-Item "$($codiumFolder.FullName)\*" build\SudoStudio\app\
+          Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
 
       - name: Prepare clean build folder
         shell: cmd
         run: |
-          mkdir build\SudoStudio\app
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
