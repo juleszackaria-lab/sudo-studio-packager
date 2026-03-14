@@ -15,7 +15,6 @@ on:
 
 jobs:
   package:
-    if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
     runs-on: windows-latest
 
     permissions:
@@ -23,6 +22,14 @@ jobs:
       contents: read
 
     steps:
+
+      - name: Check confirmation
+        shell: bash
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "I_CONFIRM_RUN" ]; then
+            echo "Confirmation incorrecte"
+            exit 1
+          fi
 
       - name: Download sudo-studio source
         uses: actions/checkout@v4
