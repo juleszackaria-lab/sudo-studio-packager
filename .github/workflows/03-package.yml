@@ -98,8 +98,7 @@ jobs:
           echo timeout /t 3 /nobreak
           echo.
           echo rem Auto-detect VSCodium folder
-          echo for /d %%%%D in ("%%SCRIPT_DIR%%app\VSCodium*") do ^
-           start "" "%%%%D\codium.exe" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui"
+          echo for /d %%%%D in ("%%SCRIPT_DIR%%app\VSCodium*") do start "" "%%%%D\codium.exe" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui"
           ) > build\SudoStudio\start.bat
 
       - name: Install Inno Setup
