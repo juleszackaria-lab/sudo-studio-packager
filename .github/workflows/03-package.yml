@@ -62,14 +62,6 @@ jobs:
           $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
           Invoke-WebRequest -Uri $url -OutFile "vscodium.zip"
 
-      - name: Verify VSCodium download
-        shell: powershell
-        run: |
-          if (!(Test-Path "vscodium.zip")) {
-            Write-Error "VSCodium zip not found"
-            exit 1
-          }
-
       - name: Extract VSCodium
         shell: powershell
         run: |
@@ -98,7 +90,10 @@ start "" "%SCRIPT_DIR%app\runtime.exe"
 
 timeout /t 3 /nobreak
 
-for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
+for /r "%SCRIPT_DIR%app" %%F in (codium.exe) do (
+  start "" "%%F" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
+  exit
+)
 '@
 
           Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
@@ -124,4 +119,23 @@ PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 
 [Files]
-Source: "build\SudoStudio\*"; DestDir:
+Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
+Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
+
+[Run]
+Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent
+'@
+
+          Set-Content -Path installer.iss -Value $issContent -Encoding ASCII
+
+      - name: Build installer
+        run: iscc installer.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: sudostudio-enterprise-installer
+          path: Output\*.exe
