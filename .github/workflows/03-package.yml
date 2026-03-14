@@ -4,22 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       backend_run_id:
-        description: "Backend Run ID"
+        description: Backend Run ID
         required: true
       runtime_run_id:
-        description: "Runtime Run ID"
+        description: Runtime Run ID
         required: true
       confirm:
-        description: "Type I_CONFIRM_RUN"
+        description: Type I_CONFIRM_RUN
         required: true
 
 jobs:
   package:
     runs-on: windows-latest
-
-    permissions:
-      actions: read
-      contents: read
 
     steps:
 
@@ -31,7 +27,7 @@ jobs:
             exit 1
           fi
 
-      - name: Download sudo-studio source
+      - name: Checkout sudo-studio source
         uses: actions/checkout@v4
         with:
           repository: juleszackaria-lab/sudo-studio
@@ -56,7 +52,7 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Prepare build folders
+      - name: Prepare folders
         shell: cmd
         run: |
           mkdir build
@@ -66,15 +62,14 @@ jobs:
       - name: Download VSCodium
         shell: powershell
         run: |
-          $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
-          Invoke-WebRequest -Uri $url -OutFile "vscodium.zip"
+          Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip -OutFile vscodium.zip
 
       - name: Extract VSCodium
         shell: powershell
         run: |
           Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
 
-      - name: Prepare clean build folder
+      - name: Copy project files
         shell: cmd
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\
@@ -84,59 +79,39 @@ jobs:
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
-      - name: Create start.bat script
-        shell: powershell
+      - name: Create start.bat
+        shell: cmd
         run: |
-          $content = @'
-@echo off
-title SudoStudio Enterprise
-set SCRIPT_DIR=%~dp0
-
-start "" "%SCRIPT_DIR%app\backend.exe"
-start "" "%SCRIPT_DIR%app\runtime.exe"
-
-timeout /t 3 /nobreak
-
-for /r "%SCRIPT_DIR%app" %%F in (codium.exe) do (
-  start "" "%%F" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-  exit
-)
-'@
-
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
+          echo @echo off >> build\SudoStudio\start.bat
+          echo title SudoStudio Enterprise >> build\SudoStudio\start.bat
+          echo set SCRIPT_DIR=%%~dp0 >> build\SudoStudio\start.bat
+          echo start "" "%%SCRIPT_DIR%%app\backend.exe" >> build\SudoStudio\start.bat
+          echo start "" "%%SCRIPT_DIR%%app\runtime.exe" >> build\SudoStudio\start.bat
+          echo timeout /t 3 /nobreak >> build\SudoStudio\start.bat
+          echo for /r "%%SCRIPT_DIR%%app" %%%%F in (codium.exe) do start "" "%%%%F" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      - name: Generate installer.iss
-        shell: powershell
+      - name: Create installer script
+        shell: cmd
         run: |
-          $issContent = @'
-[Setup]
-AppName=SudoStudio Enterprise
-AppVersion=1.0.0
-AppPublisher=SudoStudio Lab
-DefaultDirName={autopf}\SudoStudio
-DefaultGroupName=SudoStudio
-OutputDir=Output
-OutputBaseFilename=SudoStudio-Enterprise-Setup
-Compression=lzma
-SolidCompression=yes
-PrivilegesRequired=admin
-ArchitecturesInstallIn64BitMode=x64
-
-[Files]
-Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-[Icons]
-Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
-Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
-
-[Run]
-Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent
-'@
-
-          Set-Content -Path installer.iss -Value $issContent -Encoding ASCII
+          echo [Setup] > installer.iss
+          echo AppName=SudoStudio Enterprise >> installer.iss
+          echo AppVersion=1.0.0 >> installer.iss
+          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
+          echo DefaultGroupName=SudoStudio >> installer.iss
+          echo OutputDir=Output >> installer.iss
+          echo OutputBaseFilename=SudoStudio-Enterprise-Setup >> installer.iss
+          echo Compression=lzma >> installer.iss
+          echo SolidCompression=yes >> installer.iss
+          echo. >> installer.iss
+          echo [Files] >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
+          echo. >> installer.iss
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
+          echo Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
 
       - name: Build installer
         run: iscc installer.iss
