@@ -86,20 +86,22 @@ jobs:
           copy source\setup.sh build\SudoStudio\
 
       - name: Create start.bat script
-        shell: cmd
+        shell: powershell
         run: |
-          (
-          echo @echo off
-          echo title SudoStudio Enterprise
-          echo set SCRIPT_DIR=%%~dp0
-          echo.
-          echo start "" "%%SCRIPT_DIR%%app\backend.exe"
-          echo start "" "%%SCRIPT_DIR%%app\runtime.exe"
-          echo timeout /t 3 /nobreak
-          echo.
-          echo rem Auto-detect VSCodium folder
-          echo for /d %%%%D in ("%%SCRIPT_DIR%%app\VSCodium*") do start "" "%%%%D\codium.exe" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui"
-          ) > build\SudoStudio\start.bat
+          $content = @'
+@echo off
+title SudoStudio Enterprise
+set SCRIPT_DIR=%~dp0
+
+start "" "%SCRIPT_DIR%app\backend.exe"
+start "" "%SCRIPT_DIR%app\runtime.exe"
+
+timeout /t 3 /nobreak
+
+for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
+'@
+
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
 
       - name: Install Inno Setup
         run: choco install innosetup -y
@@ -108,42 +110,18 @@ jobs:
         shell: powershell
         run: |
           $issContent = @'
-          [Setup]
-          AppName=SudoStudio Enterprise
-          AppVersion=1.0.0
-          AppPublisher=SudoStudio Lab
-          DefaultDirName={autopf}\SudoStudio
-          DefaultGroupName=SudoStudio
-          OutputDir=Output
-          OutputBaseFilename=SudoStudio-Enterprise-Setup
-          Compression=lzma
-          SolidCompression=yes
-          PrivilegesRequired=admin
-          ArchitecturesInstallIn64BitMode=x64
+[Setup]
+AppName=SudoStudio Enterprise
+AppVersion=1.0.0
+AppPublisher=SudoStudio Lab
+DefaultDirName={autopf}\SudoStudio
+DefaultGroupName=SudoStudio
+OutputDir=Output
+OutputBaseFilename=SudoStudio-Enterprise-Setup
+Compression=lzma
+SolidCompression=yes
+PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64
 
-          [Files]
-          Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-          [Icons]
-          Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
-          Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
-
-          [Run]
-          Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
-          '@
-
-          Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
-
-      - name: Build installer
-        run: iscc installer.iss
-
-      - name: Verify build output
-        run: |
-          dir build\SudoStudio\
-          dir Output\
-
-      - name: Upload installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: SudoStudio-Enterprise-Installer
-          path: Output\*.exe
+[Files]
+Source: "build\SudoStudio\*"; DestDir:
