@@ -1,16 +1,16 @@
-name: 03 - SudoStudio Enterprise Packager
+name: '03 - SudoStudio Enterprise Packager'
 
 on:
   workflow_dispatch:
     inputs:
       backend_run_id:
-        description: "Backend Run ID"
+        description: 'Backend Run ID'
         required: true
       runtime_run_id:
-        description: "Runtime Run ID"
+        description: 'Runtime Run ID'
         required: true
       confirm:
-        description: "Type I_CONFIRM_RUN"
+        description: 'Type I_CONFIRM_RUN'
         required: true
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
         with:
           repo: juleszackaria-lab/sudo-studio
           name: backend-exe
-          path: build/backend
+          path: build\backend
           run_id: ${{ github.event.inputs.backend_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
@@ -44,7 +44,7 @@ jobs:
         with:
           repo: juleszackaria-lab/sudo-studio
           name: runtime-exe
-          path: build/runtime
+          path: build\runtime
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
@@ -64,10 +64,8 @@ jobs:
       - name: Verify VSCodium download
         shell: powershell
         run: |
-          if (!(Test-Path "vscodium.zip")) {
-            Write-Error "VSCodium zip not found"
-            exit 1
-          } else { Write-Host "VSCodium zip OK" }
+          if (!(Test-Path "vscodium.zip")) { Write-Error "VSCodium zip not found"; exit 1 }
+          else { Write-Host "VSCodium zip OK" }
 
       - name: Extract VSCodium
         shell: powershell
@@ -85,10 +83,10 @@ jobs:
           copy /Y source\setup.bat build\SudoStudio\
           copy /Y source\setup.sh build\SudoStudio\
 
-      - name: Create start.bat
+      - name: Create robust start.bat
         shell: powershell
         run: |
-          $startBat = @"
+          $bat = @'
 @echo off
 title SudoStudio Enterprise
 set SCRIPT_DIR=%~dp0
@@ -111,28 +109,29 @@ if exist "%SCRIPT_DIR%app\runtime.exe" (
 
 timeout /t 3 /nobreak
 
-echo Launching VS Codium...
+echo Launching VS Codium (App)...
 for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
     if exist "%%D\codium.exe" (
         start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-        echo VS Codium started
+        echo VS Codium started successfully.
     ) else (
         echo codium.exe not found in %%D
         exit /b 1
     )
 )
-"@
+'@
 
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $startBat -Encoding ASCII
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $bat -Encoding ASCII
           Write-Host "start.bat created"
 
       - name: Install Inno Setup
+        shell: cmd
         run: choco install innosetup -y
 
       - name: Generate installer.iss
         shell: powershell
         run: |
-          $iss = @"
+          $iss = @'
 [Setup]
 AppName=SudoStudio Enterprise
 AppVersion=1.0.0
@@ -155,7 +154,7 @@ Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"; Work
 
 [Run]
 Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
-"@
+'@
 
           Set-Content -Path "installer.iss" -Value $iss -Encoding ASCII
           Write-Host "installer.iss created"
