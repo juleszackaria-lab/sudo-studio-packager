@@ -65,12 +65,7 @@ jobs:
       - name: Verify VSCodium download
         shell: powershell
         run: |
-          if (!(Test-Path "vscodium.zip")) {
-            Write-Error "VSCodium zip not found. Aborting."
-            exit 1
-          } else {
-            Write-Host "VSCodium zip downloaded successfully."
-          }
+          if (!(Test-Path "vscodium.zip")) { Write-Error "VSCodium zip not found"; exit 1 } else { Write-Host "VSCodium downloaded." }
 
       - name: Extract VSCodium
         shell: powershell
@@ -91,7 +86,7 @@ jobs:
       - name: Create robust start.bat
         shell: powershell
         run: |
-          $content = @'
+          $batContent = @'
 @echo off
 title SudoStudio Enterprise
 set SCRIPT_DIR=%~dp0
@@ -118,15 +113,14 @@ echo Launching VS Codium (App)...
 for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
     if exist "%%D\codium.exe" (
         start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-        echo VS Codium started successfully.
+        echo VS Codium started.
     ) else (
         echo codium.exe not found in %%D
         exit /b 1
     )
 )
 '@
-
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $batContent -Encoding ASCII
           Write-Host "start.bat created."
 
       - name: Install Inno Setup
@@ -160,18 +154,11 @@ Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"; Work
 [Run]
 Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
 '@
-
           Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
           Write-Host "installer.iss generated."
 
       - name: Build installer
         run: iscc installer.iss
-
-      - name: Verify build output
-        shell: cmd
-        run: |
-          dir build\SudoStudio\
-          dir Output\
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
