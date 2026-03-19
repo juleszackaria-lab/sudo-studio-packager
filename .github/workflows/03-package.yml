@@ -4,18 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       backend_run_id:
-        description: Backend Run ID
+        description: "Backend Run ID"
         required: true
       runtime_run_id:
-        description: Runtime Run ID
+        description: "Runtime Run ID"
         required: true
       confirm:
-        description: Type I_CONFIRM_RUN
+        description: "Type I_CONFIRM_RUN"
         required: true
 
 jobs:
   package:
+    if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
     runs-on: windows-latest
+
+    permissions:
+      actions: read
+      contents: read
 
     steps:
 
@@ -58,28 +63,22 @@ jobs:
           mkdir build
           mkdir build\SudoStudio
           mkdir build\SudoStudio\app
+          mkdir build\SudoStudio\data
+          mkdir build\SudoStudio\extensions
 
-      - name: Download VSCodium (robust)
+      - name: Download VSCodium
         shell: powershell
         run: |
           $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
-          $output = "vscodium.zip"
+          Invoke-WebRequest -Uri $url -OutFile "vscodium.zip" -UseBasicParsing
 
-          Write-Host "Downloading VSCodium..."
-
-          try {
-            Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-          } catch {
-            Write-Host "Primary download failed, retrying with curl..."
-            curl -L $url -o $output
-          }
-
-          if (!(Test-Path $output)) {
-            Write-Error "Download failed completely"
+      - name: Verify VSCodium download
+        shell: powershell
+        run: |
+          if (!(Test-Path "vscodium.zip")) {
+            Write-Error "VSCodium zip not found"
             exit 1
           }
-
-          Write-Host "Download OK"
 
       - name: Extract VSCodium
         shell: powershell
@@ -92,49 +91,90 @@ jobs:
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
+          xcopy /E /I source\webE build\SudoStudio\app\webE\
+          xcopy /E /I source\FSE build\SudoStudio\app\FSE\
           copy source\product.json build\SudoStudio\app\product.json
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
-      - name: Create start.bat
-        shell: cmd
+      - name: Create robust start.bat
+        shell: powershell
         run: |
-          echo @echo off >> build\SudoStudio\start.bat
-          echo title SudoStudio Enterprise >> build\SudoStudio\start.bat
-          echo set SCRIPT_DIR=%%~dp0 >> build\SudoStudio\start.bat
-          echo start "" "%%SCRIPT_DIR%%app\backend.exe" >> build\SudoStudio\start.bat
-          echo start "" "%%SCRIPT_DIR%%app\runtime.exe" >> build\SudoStudio\start.bat
-          echo timeout /t 3 /nobreak >> build\SudoStudio\start.bat
-          echo for /r "%%SCRIPT_DIR%%app" %%%%F in (codium.exe) do start "" "%%%%F" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
+          $startBat = @'
+@echo off
+title SudoStudio Enterprise
+set SCRIPT_DIR=%~dp0
+
+echo [INFO] Launching backend...
+for /r "%SCRIPT_DIR%app" %%F in (backend.exe) do (
+    echo Starting %%F
+    start "" "%%F"
+)
+
+echo [INFO] Launching runtime...
+for /r "%SCRIPT_DIR%app" %%F in (runtime.exe) do (
+    echo Starting %%F
+    start "" "%%F"
+)
+
+timeout /t 3 /nobreak
+
+echo [INFO] Launching VSCodium...
+for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
+    if (Test-Path "%%D\codium.exe") (
+        start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
+        echo [INFO] VSCodium launched from %%D
+    )
+)
+
+echo [INFO] All processes started.
+'@
+
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $startBat -Encoding ASCII
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      - name: Create installer script
-        shell: cmd
+      - name: Generate installer.iss
+        shell: powershell
         run: |
-          echo [Setup] > installer.iss
-          echo AppName=SudoStudio Enterprise >> installer.iss
-          echo AppVersion=1.0.0 >> installer.iss
-          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
-          echo DefaultGroupName=SudoStudio >> installer.iss
-          echo OutputDir=Output >> installer.iss
-          echo OutputBaseFilename=SudoStudio-Enterprise-Setup >> installer.iss
-          echo Compression=lzma >> installer.iss
-          echo SolidCompression=yes >> installer.iss
-          echo. >> installer.iss
-          echo [Files] >> installer.iss
-          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
-          echo. >> installer.iss
-          echo [Icons] >> installer.iss
-          echo Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
-          echo Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
+          $issContent = @'
+[Setup]
+AppName=SudoStudio Enterprise
+AppVersion=1.0.0
+AppPublisher=SudoStudio Lab
+DefaultDirName={autopf}\SudoStudio
+DefaultGroupName=SudoStudio
+OutputDir=Output
+OutputBaseFilename=SudoStudio-Enterprise-Setup
+Compression=lzma
+SolidCompression=yes
+PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64
+
+[Files]
+Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
+Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
+
+[Run]
+Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
+'@
+
+          Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
 
       - name: Build installer
         run: iscc installer.iss
 
+      - name: Verify build output
+        run: |
+          dir build\SudoStudio\
+          dir Output\
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: sudostudio-enterprise-installer
+          name: SudoStudio-Enterprise-Installer
           path: Output\*.exe
