@@ -57,7 +57,7 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Prepare folders
+      - name: Prepare build folders
         shell: cmd
         run: |
           mkdir build
@@ -91,51 +91,40 @@ jobs:
           copy build\backend\backend.exe build\SudoStudio\app\
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
-          xcopy /E /I source\webE build\SudoStudio\app\webE\
-          xcopy /E /I source\FSE build\SudoStudio\app\FSE\
           copy source\product.json build\SudoStudio\app\product.json
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
-      - name: Create robust start.bat
+      - name: Create start.bat script
         shell: powershell
         run: |
-          $startBat = @'
+          $batContent = @'
 @echo off
 title SudoStudio Enterprise
 set SCRIPT_DIR=%~dp0
 
 echo [INFO] Launching backend...
-for /r "%SCRIPT_DIR%app" %%F in (backend.exe) do (
-    echo Starting %%F
-    start "" "%%F"
-)
+start "" "%SCRIPT_DIR%app\backend.exe"
 
 echo [INFO] Launching runtime...
-for /r "%SCRIPT_DIR%app" %%F in (runtime.exe) do (
-    echo Starting %%F
-    start "" "%%F"
-)
+start "" "%SCRIPT_DIR%app\runtime.exe"
 
 timeout /t 3 /nobreak
 
 echo [INFO] Launching VSCodium...
 for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
-    if (Test-Path "%%D\codium.exe") (
-        start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-        echo [INFO] VSCodium launched from %%D
-    )
+    start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
 )
 
-echo [INFO] All processes started.
+echo [INFO] Application launched successfully.
 '@
 
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $startBat -Encoding ASCII
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $batContent -Encoding ASCII
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      - name: Generate installer.iss
+      - name: Generate installer script
         shell: powershell
         run: |
           $issContent = @'
@@ -169,6 +158,7 @@ Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags:
         run: iscc installer.iss
 
       - name: Verify build output
+        shell: cmd
         run: |
           dir build\SudoStudio\
           dir Output\
