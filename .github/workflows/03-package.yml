@@ -58,7 +58,7 @@ jobs:
         shell: powershell
         run: |
           $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
-          Invoke-WebRequest -Uri $url -OutFile vscodium.zip -UseBasicParsing
+          Invoke-WebRequest -Uri $url -OutFile vscodium.zip
 
       - name: Verify VSCodium download
         shell: powershell
