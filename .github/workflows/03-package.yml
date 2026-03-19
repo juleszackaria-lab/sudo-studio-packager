@@ -79,16 +79,95 @@ jobs:
           copy source\setup.bat build\SudoStudio\
           copy source\setup.sh build\SudoStudio\
 
+      # 🔥 VERSION PRO START.BAT
       - name: Create start.bat
-        shell: cmd
+        shell: powershell
         run: |
-          echo @echo off >> build\SudoStudio\start.bat
-          echo title SudoStudio Enterprise >> build\SudoStudio\start.bat
-          echo set SCRIPT_DIR=%%~dp0 >> build\SudoStudio\start.bat
-          echo start "" "%%SCRIPT_DIR%%app\backend.exe" >> build\SudoStudio\start.bat
-          echo start "" "%%SCRIPT_DIR%%app\runtime.exe" >> build\SudoStudio\start.bat
-          echo timeout /t 3 /nobreak >> build\SudoStudio\start.bat
-          echo for /r "%%SCRIPT_DIR%%app" %%%%F in (codium.exe) do start "" "%%%%F" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
+          $content = @'
+@echo off
+title SudoStudio Enterprise
+color 0A
+
+set SCRIPT_DIR=%~dp0
+set APP_DIR=%SCRIPT_DIR%app
+set LOG_FILE=%SCRIPT_DIR%launch.log
+
+echo ============================ > "%LOG_FILE%"
+echo SudoStudio Launch >> "%LOG_FILE%"
+echo ============================ >> "%LOG_FILE%"
+echo.
+
+echo [INFO] Starting SudoStudio...
+echo [INFO] Base dir: %SCRIPT_DIR% >> "%LOG_FILE%"
+
+REM ========================
+REM BACKEND
+REM ========================
+set BACKEND_EXE=
+for /r "%APP_DIR%" %%F in (backend.exe) do set BACKEND_EXE=%%F
+
+if not defined BACKEND_EXE (
+  for /r "%APP_DIR%" %%F in (*.exe) do (
+    set BACKEND_EXE=%%F
+    goto start_backend
+  )
+)
+
+:start_backend
+if defined BACKEND_EXE (
+  echo [OK] Backend: %BACKEND_EXE%
+  echo Backend: %BACKEND_EXE% >> "%LOG_FILE%"
+  start "" "%BACKEND_EXE%"
+) else (
+  echo [ERROR] Backend not found
+  echo Backend not found >> "%LOG_FILE%"
+)
+
+REM ========================
+REM RUNTIME
+REM ========================
+set RUNTIME_EXE=
+for /r "%APP_DIR%" %%F in (runtime.exe) do set RUNTIME_EXE=%%F
+
+if not defined RUNTIME_EXE (
+  for /r "%APP_DIR%" %%F in (*server*.exe) do (
+    set RUNTIME_EXE=%%F
+    goto start_runtime
+  )
+)
+
+:start_runtime
+if defined RUNTIME_EXE (
+  echo [OK] Runtime: %RUNTIME_EXE%
+  echo Runtime: %RUNTIME_EXE% >> "%LOG_FILE%"
+  start "" "%RUNTIME_EXE%"
+) else (
+  echo [ERROR] Runtime not found
+  echo Runtime not found >> "%LOG_FILE%"
+)
+
+timeout /t 3 /nobreak
+
+REM ========================
+REM CODIUM
+REM ========================
+set CODIUM_EXE=
+for /r "%APP_DIR%" %%F in (codium.exe) do set CODIUM_EXE=%%F
+
+if defined CODIUM_EXE (
+  echo [OK] Codium: %CODIUM_EXE%
+  echo Codium: %CODIUM_EXE% >> "%LOG_FILE%"
+  start "" "%CODIUM_EXE%" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%APP_DIR%\web-ui"
+) else (
+  echo [ERROR] Codium not found
+  echo Codium not found >> "%LOG_FILE%"
+)
+
+echo [DONE] Launch complete >> "%LOG_FILE%"
+pause
+'@
+
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
 
       - name: Install Inno Setup
         run: choco install innosetup -y
