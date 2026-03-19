@@ -77,56 +77,17 @@ jobs:
           xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
           copy source\product.json build\SudoStudio\app\product.json
 
-      - name: Create start.bat (ULTRA ROBUST)
-        shell: powershell
+      - name: Create start.bat
+        shell: cmd
         run: |
-          $content = @"
-@echo off
-title SudoStudio Enterprise
-setlocal enabledelayedexpansion
-
-set SCRIPT_DIR=%~dp0
-set LOG_FILE=%SCRIPT_DIR%debug.log
-
-echo ============================ >> "%LOG_FILE%"
-echo START %date% %time% >> "%LOG_FILE%"
-
-echo Launching backend...
-if exist "%SCRIPT_DIR%app\backend.exe" (
-    start "" "%SCRIPT_DIR%app\backend.exe"
-) else (
-    echo backend.exe NOT FOUND >> "%LOG_FILE%"
-)
-
-echo Launching runtime...
-if exist "%SCRIPT_DIR%app\runtime.exe" (
-    start "" "%SCRIPT_DIR%app\runtime.exe"
-) else (
-    echo runtime.exe NOT FOUND >> "%LOG_FILE%"
-)
-
-timeout /t 3 /nobreak >nul
-
-echo Searching codium.exe...
-set CODIUM_FOUND=
-
-for /r "%SCRIPT_DIR%app" %%F in (codium.exe) do (
-    set CODIUM_FOUND=%%F
-)
-
-if defined CODIUM_FOUND (
-    echo Found codium: !CODIUM_FOUND! >> "%LOG_FILE%"
-    start "" "!CODIUM_FOUND!" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-) else (
-    echo codium.exe NOT FOUND >> "%LOG_FILE%"
-    echo ERROR: codium not found
-    pause
-)
-
-echo END >> "%LOG_FILE%"
-"@
-
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
+          echo @echo off > build\SudoStudio\start.bat
+          echo title SudoStudio Enterprise >> build\SudoStudio\start.bat
+          echo set SCRIPT_DIR=%%~dp0 >> build\SudoStudio\start.bat
+          echo echo Starting... >> build\SudoStudio\start.bat
+          echo if exist "%%SCRIPT_DIR%%app\backend.exe" start "" "%%SCRIPT_DIR%%app\backend.exe" >> build\SudoStudio\start.bat
+          echo if exist "%%SCRIPT_DIR%%app\runtime.exe" start "" "%%SCRIPT_DIR%%app\runtime.exe" >> build\SudoStudio\start.bat
+          echo timeout /t 3 /nobreak >> build\SudoStudio\start.bat
+          echo for /r "%%SCRIPT_DIR%%app" %%%%F in (codium.exe) do start "" "%%%%F" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
@@ -143,11 +104,9 @@ echo END >> "%LOG_FILE%"
           echo OutputBaseFilename=SudoStudio-Enterprise-Setup >> installer.iss
           echo Compression=lzma >> installer.iss
           echo SolidCompression=yes >> installer.iss
-
           echo. >> installer.iss
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
-
           echo. >> installer.iss
           echo [Icons] >> installer.iss
           echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
@@ -156,7 +115,7 @@ echo END >> "%LOG_FILE%"
       - name: Build installer
         run: iscc installer.iss
 
-      - name: Upload
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: sudostudio-installer
