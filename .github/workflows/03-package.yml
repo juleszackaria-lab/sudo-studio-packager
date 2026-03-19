@@ -1,4 +1,83 @@
-- name: Create start.bat (PRO VERSION)
+name: "03 - SudoStudio Enterprise Packager"
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_run_id:
+        description: "Backend Run ID"
+        required: true
+      runtime_run_id:
+        description: "Runtime Run ID"
+        required: true
+      confirm:
+        description: "Type I_CONFIRM_RUN"
+        required: true
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+
+      - name: Check confirmation
+        shell: bash
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "I_CONFIRM_RUN" ]; then
+            echo "Confirmation incorrecte"
+            exit 1
+          fi
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          repository: juleszackaria-lab/sudo-studio
+          path: source
+          token: ${{ secrets.PAT_DOWNLOAD }}
+
+      - name: Download backend
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackaria-lab/sudo-studio
+          name: backend-exe
+          path: build/backend
+          run_id: ${{ github.event.inputs.backend_run_id }}
+          github_token: ${{ secrets.PAT_DOWNLOAD }}
+
+      - name: Download runtime
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackaria-lab/sudo-studio
+          name: runtime-exe
+          path: build/runtime
+          run_id: ${{ github.event.inputs.runtime_run_id }}
+          github_token: ${{ secrets.PAT_DOWNLOAD }}
+
+      - name: Prepare folders
+        shell: cmd
+        run: |
+          mkdir build
+          mkdir build\SudoStudio
+          mkdir build\SudoStudio\app
+
+      - name: Download VSCodium
+        shell: powershell
+        run: |
+          Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/latest/download/VSCodium-win32-x64.zip -OutFile vscodium.zip
+
+      - name: Extract VSCodium
+        shell: powershell
+        run: |
+          Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app
+
+      - name: Copy files
+        shell: cmd
+        run: |
+          copy build\backend\backend.exe build\SudoStudio\app\
+          copy build\runtime\server.exe build\SudoStudio\app\runtime.exe
+          xcopy /E /I source\web-ui build\SudoStudio\app\web-ui\
+          copy source\product.json build\SudoStudio\app\product.json
+
+      - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
@@ -7,41 +86,54 @@
           echo set SCRIPT_DIR=%%~dp0 >> build\SudoStudio\start.bat
           echo set LOG=%%SCRIPT_DIR%%debug.log >> build\SudoStudio\start.bat
 
-          echo echo ============================ ^>^> %%LOG%% >> build\SudoStudio\start.bat
           echo echo START %%date%% %%time%% ^>^> %%LOG%% >> build\SudoStudio\start.bat
 
-          echo echo Searching backend... >> build\SudoStudio\start.bat
           echo set BACKEND= >> build\SudoStudio\start.bat
           echo for /r "%%SCRIPT_DIR%%app" %%%%F in (backend.exe) do set BACKEND=%%%%F >> build\SudoStudio\start.bat
-          echo if defined BACKEND ( >> build\SudoStudio\start.bat
-          echo   echo Found backend: %%BACKEND%% ^>^> %%LOG%% >> build\SudoStudio\start.bat
-          echo   start "" "%%BACKEND%%" >> build\SudoStudio\start.bat
-          echo ) else ( >> build\SudoStudio\start.bat
-          echo   echo backend NOT FOUND ^>^> %%LOG%% >> build\SudoStudio\start.bat
-          echo ) >> build\SudoStudio\start.bat
+          echo if defined BACKEND start "" "%%BACKEND%%" >> build\SudoStudio\start.bat
 
-          echo echo Searching runtime... >> build\SudoStudio\start.bat
           echo set RUNTIME= >> build\SudoStudio\start.bat
           echo for /r "%%SCRIPT_DIR%%app" %%%%F in (runtime.exe) do set RUNTIME=%%%%F >> build\SudoStudio\start.bat
-          echo if defined RUNTIME ( >> build\SudoStudio\start.bat
-          echo   echo Found runtime: %%RUNTIME%% ^>^> %%LOG%% >> build\SudoStudio\start.bat
-          echo   start "" "%%RUNTIME%%" >> build\SudoStudio\start.bat
-          echo ) else ( >> build\SudoStudio\start.bat
-          echo   echo runtime NOT FOUND ^>^> %%LOG%% >> build\SudoStudio\start.bat
-          echo ) >> build\SudoStudio\start.bat
+          echo if defined RUNTIME start "" "%%RUNTIME%%" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 /nobreak ^>nul >> build\SudoStudio\start.bat
 
-          echo echo Searching codium... >> build\SudoStudio\start.bat
           echo set CODIUM= >> build\SudoStudio\start.bat
           echo for /r "%%SCRIPT_DIR%%app" %%%%F in (codium.exe) do set CODIUM=%%%%F >> build\SudoStudio\start.bat
-          echo if defined CODIUM ( >> build\SudoStudio\start.bat
-          echo   echo Found codium: %%CODIUM%% ^>^> %%LOG%% >> build\SudoStudio\start.bat
-          echo   start "" "%%CODIUM%%" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
-          echo ) else ( >> build\SudoStudio\start.bat
-          echo   echo codium NOT FOUND ^>^> %%LOG%% >> build\SudoStudio\start.bat
-          echo   echo ERROR: codium not found >> build\SudoStudio\start.bat
-          echo   pause >> build\SudoStudio\start.bat
-          echo ) >> build\SudoStudio\start.bat
+          echo if defined CODIUM start "" "%%CODIUM%%" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
 
           echo echo END ^>^> %%LOG%% >> build\SudoStudio\start.bat
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Create installer
+        shell: cmd
+        run: |
+          echo [Setup] > installer.iss
+          echo AppName=SudoStudio Enterprise >> installer.iss
+          echo AppVersion=1.0.0 >> installer.iss
+          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
+          echo DefaultGroupName=SudoStudio >> installer.iss
+          echo OutputDir=Output >> installer.iss
+          echo OutputBaseFilename=SudoStudio-Enterprise-Setup >> installer.iss
+          echo Compression=lzma >> installer.iss
+          echo SolidCompression=yes >> installer.iss
+
+          echo. >> installer.iss
+          echo [Files] >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
+
+          echo. >> installer.iss
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
+          echo Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
+
+      - name: Build installer
+        run: iscc installer.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: sudostudio-installer
+          path: Output\*.exe
