@@ -22,6 +22,7 @@ jobs:
       contents: read
 
     steps:
+
       - name: Checkout sudo-studio source
         uses: actions/checkout@v4
         with:
@@ -64,17 +65,15 @@ jobs:
         shell: powershell
         run: |
           if (!(Test-Path "vscodium.zip")) {
-            Write-Error "VSCodium zip not found. Aborting."
+            Write-Error "VSCodium zip not found"
             exit 1
-          } else {
-            Write-Host "VSCodium zip downloaded successfully."
-          }
+          } else { Write-Host "VSCodium zip OK" }
 
       - name: Extract VSCodium
         shell: powershell
         run: |
           Expand-Archive -Path vscodium.zip -DestinationPath build\SudoStudio\app -Force
-          Write-Host "VSCodium extracted."
+          Write-Host "VSCodium extracted"
 
       - name: Copy project files
         shell: cmd
@@ -86,10 +85,10 @@ jobs:
           copy /Y source\setup.bat build\SudoStudio\
           copy /Y source\setup.sh build\SudoStudio\
 
-      - name: Create robust start.bat
+      - name: Create start.bat
         shell: powershell
         run: |
-          $content = @'
+          $startBat = @"
 @echo off
 title SudoStudio Enterprise
 set SCRIPT_DIR=%~dp0
@@ -112,20 +111,20 @@ if exist "%SCRIPT_DIR%app\runtime.exe" (
 
 timeout /t 3 /nobreak
 
-echo Launching VS Codium (App)...
+echo Launching VS Codium...
 for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
     if exist "%%D\codium.exe" (
         start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-        echo VS Codium started successfully.
+        echo VS Codium started
     ) else (
         echo codium.exe not found in %%D
         exit /b 1
     )
 )
-'@
+"@
 
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
-          Write-Host "start.bat created."
+          Set-Content -Path "build\SudoStudio\start.bat" -Value $startBat -Encoding ASCII
+          Write-Host "start.bat created"
 
       - name: Install Inno Setup
         run: choco install innosetup -y
@@ -133,7 +132,7 @@ for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
       - name: Generate installer.iss
         shell: powershell
         run: |
-          $issContent = @'
+          $iss = @"
 [Setup]
 AppName=SudoStudio Enterprise
 AppVersion=1.0.0
@@ -156,19 +155,13 @@ Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"; Work
 
 [Run]
 Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
-'@
+"@
 
-          Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
-          Write-Host "installer.iss generated."
+          Set-Content -Path "installer.iss" -Value $iss -Encoding ASCII
+          Write-Host "installer.iss created"
 
       - name: Build installer
         run: iscc installer.iss
-
-      - name: Verify build output
-        shell: cmd
-        run: |
-          dir build\SudoStudio\
-          dir Output\
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
