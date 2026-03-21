@@ -15,8 +15,9 @@ on:
 
 jobs:
   package:
-    if: github.event.inputs.confirm == 'I_CONFIRM_RUN'
+    if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
     runs-on: windows-latest
+
     permissions:
       actions: read
       contents: read
@@ -34,7 +35,7 @@ jobs:
         with:
           repo: juleszackaria-lab/sudo-studio
           name: backend-exe
-          path: build\backend
+          path: "build/backend"
           run_id: ${{ github.event.inputs.backend_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
@@ -43,7 +44,7 @@ jobs:
         with:
           repo: juleszackaria-lab/sudo-studio
           name: runtime-exe
-          path: build\runtime
+          path: "build/runtime"
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
@@ -58,22 +59,17 @@ jobs:
         shell: powershell
         run: |
           $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
-          Invoke-WebRequest -Uri $url -OutFile vscodium.zip -UseBasicParsing
+          Invoke-WebRequest -Uri $url -OutFile "vscodium.zip"
 
       - name: Verify VSCodium download
         shell: powershell
         run: |
-          if (!(Test-Path "vscodium.zip")) {
-            Write-Error "VSCodium zip not found. Aborting."
-            exit 1
-          }
-          Write-Host "VSCodium zip downloaded successfully."
+          if (!(Test-Path "vscodium.zip")) { exit 1 }
 
       - name: Extract VSCodium
         shell: powershell
         run: |
-          Expand-Archive -Path vscodium.zip -DestinationPath build\SudoStudio\app -Force
-          Write-Host "VSCodium extracted."
+          Expand-Archive -Path "vscodium.zip" -DestinationPath "build\SudoStudio\app" -Force
 
       - name: Copy project files
         shell: cmd
@@ -86,74 +82,51 @@ jobs:
           copy /Y source\setup.sh build\SudoStudio\
 
       - name: Create start.bat
-        shell: powershell
+        shell: cmd
         run: |
-          $content = @'
-@echo off
-title SudoStudio Enterprise
-set SCRIPT_DIR=%~dp0
+          echo @echo off > build\SudoStudio\start.bat
+          echo title SudoStudio Enterprise >> build\SudoStudio\start.bat
+          echo set SCRIPT_DIR=%%~dp0 >> build\SudoStudio\start.bat
 
-if exist "%SCRIPT_DIR%app\backend.exe" (
-    start "" "%SCRIPT_DIR%app\backend.exe"
-) else (
-    echo backend.exe not found!
-    exit /b 1
-)
+          echo if exist "%%SCRIPT_DIR%%app\backend.exe" start "" "%%SCRIPT_DIR%%app\backend.exe" >> build\SudoStudio\start.bat
+          echo if exist "%%SCRIPT_DIR%%app\runtime.exe" start "" "%%SCRIPT_DIR%%app\runtime.exe" >> build\SudoStudio\start.bat
 
-if exist "%SCRIPT_DIR%app\runtime.exe" (
-    start "" "%SCRIPT_DIR%app\runtime.exe"
-) else (
-    echo runtime.exe not found!
-    exit /b 1
-)
+          echo timeout /t 3 /nobreak >> build\SudoStudio\start.bat
 
-timeout /t 3 /nobreak
-
-for /d %%D in ("%SCRIPT_DIR%app\VSCodium*") do (
-    if exist "%%D\codium.exe" (
-        start "" "%%D\codium.exe" --user-data-dir "%SCRIPT_DIR%data" --extensions-dir "%SCRIPT_DIR%extensions" --folder "%SCRIPT_DIR%app\web-ui"
-    ) else (
-        echo codium.exe not found in %%D
-        exit /b 1
-    )
-)
-'@
-
-          Set-Content -Path "build\SudoStudio\start.bat" -Value $content -Encoding ASCII
+          echo for /d %%%%D in ("%%SCRIPT_DIR%%app\VSCodium*") do ( >> build\SudoStudio\start.bat
+          echo if exist "%%%%D\codium.exe" start "" "%%%%D\codium.exe" --user-data-dir "%%SCRIPT_DIR%%data" --extensions-dir "%%SCRIPT_DIR%%extensions" --folder "%%SCRIPT_DIR%%app\web-ui" >> build\SudoStudio\start.bat
+          echo ) >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         shell: cmd
         run: choco install innosetup -y
 
       - name: Generate installer.iss
-        shell: powershell
+        shell: cmd
         run: |
-          $issContent = @'
-[Setup]
-AppName=SudoStudio Enterprise
-AppVersion=1.0.0
-AppPublisher=SudoStudio Lab
-DefaultDirName={autopf}\SudoStudio
-DefaultGroupName=SudoStudio
-OutputDir=Output
-OutputBaseFilename=SudoStudio-Enterprise-Setup
-Compression=lzma
-SolidCompression=yes
-PrivilegesRequired=admin
-ArchitecturesInstallIn64BitMode=x64
+          echo [Setup] > installer.iss
+          echo AppName=SudoStudio Enterprise >> installer.iss
+          echo AppVersion=1.0.0 >> installer.iss
+          echo AppPublisher=SudoStudio Lab >> installer.iss
+          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
+          echo DefaultGroupName=SudoStudio >> installer.iss
+          echo OutputDir=Output >> installer.iss
+          echo OutputBaseFilename=SudoStudio-Enterprise-Setup >> installer.iss
+          echo Compression=lzma >> installer.iss
+          echo SolidCompression=yes >> installer.iss
 
-[Files]
-Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          echo. >> installer.iss
+          echo [Files] >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
 
-[Icons]
-Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
-Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
+          echo. >> installer.iss
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
+          echo Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
 
-[Run]
-Filename: "{app}\start.bat"; Description: "Launch SudoStudio Enterprise"; Flags: nowait postinstall skipifsilent shellexec
-'@
-
-          Set-Content -Path "installer.iss" -Value $issContent -Encoding ASCII
+          echo. >> installer.iss
+          echo [Run] >> installer.iss
+          echo Filename: "{app}\start.bat"; Flags: nowait postinstall skipifsilent shellexec >> installer.iss
 
       - name: Build installer
         run: iscc installer.iss
