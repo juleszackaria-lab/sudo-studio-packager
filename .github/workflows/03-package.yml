@@ -9,13 +9,9 @@ on:
       runtime_run_id:
         description: 'Runtime Run ID'
         required: true
-      confirm:
-        description: 'Type I_CONFIRM_RUN'
-        required: true
 
 jobs:
   package:
-    if: ${{ github.event.inputs.confirm == 'I_CONFIRM_RUN' }}
     runs-on: windows-latest
 
     permissions:
