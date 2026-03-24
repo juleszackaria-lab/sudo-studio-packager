@@ -14,19 +14,15 @@ jobs:
   package:
     runs-on: windows-latest
 
-    permissions:
-      actions: read
-      contents: read
-
     steps:
-      - name: Checkout sudo-studio source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           repository: juleszackaria-lab/sudo-studio
           path: source
           token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Download backend artifact
+      - name: Download backend
         uses: dawidd6/action-download-artifact@v5
         with:
           repo: juleszackaria-lab/sudo-studio
@@ -35,7 +31,7 @@ jobs:
           run_id: ${{ github.event.inputs.backend_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Download runtime artifact
+      - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
         with:
           repo: juleszackaria-lab/sudo-studio
@@ -44,138 +40,77 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Prepare build folders
-        shell: cmd
+      - name: Prepare folders
         run: |
-          if not exist build mkdir build
-          if not exist build\SudoStudio mkdir build\SudoStudio
-          if not exist build\SudoStudio\app mkdir build\SudoStudio\app
+          mkdir build
+          mkdir build\SudoStudio
+          mkdir build\SudoStudio\app
 
       - name: Download VSCodium
         shell: powershell
         run: |
-          $url = "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip"
-          Invoke-WebRequest -Uri $url -OutFile "vscodium.zip"
+          Invoke-WebRequest "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip" -OutFile vscodium.zip
 
-      - name: Extract VSCodium
+      - name: Extract
         shell: powershell
         run: |
-          Expand-Archive -Path "vscodium.zip" -DestinationPath "build\SudoStudio\app" -Force
+          Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app -Force
 
-      - name: Copy project files
+      - name: Copy files
         shell: cmd
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\ /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           xcopy /E /I /Y source\web-ui build\SudoStudio\app\web-ui\
-          copy /Y source\product.json build\SudoStudio\app\product.json
-          copy /Y source\setup.bat build\SudoStudio\
-          copy /Y source\setup.sh build\SudoStudio\
 
-      # ===== EXTENSION (FIX FINAL) =====
-      - name: Create VS Code extension for Sudo AI
+      # ===== EXTENSION FIX DEFINITIF =====
+      - name: Create extension (safe)
         shell: powershell
         run: |
-          $base = "build\SudoStudio\app\resources\app\extensions\sudo-ai"
-          New-Item -ItemType Directory -Force -Path $base
+          $dir = "build\SudoStudio\app\resources\app\extensions\sudo-ai"
+          New-Item -ItemType Directory -Force -Path $dir
 
-          @"
-{
-  "name": "sudo-ai",
-  "displayName": "Sudo AI",
-  "description": "Copilot-style AI Chat",
-  "version": "1.0.0",
-  "engines": { "vscode": "^1.97.0" },
-  "activationEvents": ["*"],
-  "main": "./extension.js"
-}
-"@ | Out-File "$base\package.json" -Encoding utf8
+          Set-Content "$dir\package.json" '{"name":"sudo-ai","displayName":"Sudo AI","version":"1.0.0","engines":{"vscode":"^1.97.0"},"activationEvents":["*"],"main":"./extension.js"}'
 
-          @"
-const vscode = require('vscode');
-const fs = require('fs');
+          Set-Content "$dir\extension.js" "const vscode=require('vscode');exports.activate=function(){const panel=vscode.window.createWebviewPanel('sudo','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true});panel.webview.html=require('fs').readFileSync(__dirname+'\\\\webview.html','utf8');}"
 
-function activate(context) {
-    const panel = vscode.window.createWebviewPanel(
-        'sudoAI',
-        'Sudo AI',
-        vscode.ViewColumn.Beside,
-        { enableScripts: true }
-    );
+          Set-Content "$dir\webview.html" "<html><body><h2>Sudo AI</h2><input id='i'><button onclick='s()'>Send</button><div id='d'></div><script>function s(){let i=document.getElementById('i');let d=document.getElementById('d');d.innerHTML+='<div>> '+i.value+'</div>';i.value='';}</script></body></html>"
 
-    panel.webview.html = fs.readFileSync(__dirname + '\\webview.html', 'utf8');
-}
-
-exports.activate = activate;
-"@ | Out-File "$base\extension.js" -Encoding utf8
-
-          @"
-<html>
-<body>
-<h2>Sudo AI Chat</h2>
-<input id="input" style="width:80%">
-<button onclick="send()">Send</button>
-<div id="msg" style="height:300px;overflow:auto;border:1px solid gray;"></div>
-
-<script>
-function send(){
-    let i=document.getElementById('input');
-    let d=document.getElementById('msg');
-    d.innerHTML += '<div>> ' + i.value + '</div>';
-    i.value='';
-}
-</script>
-
-</body>
-</html>
-"@ | Out-File "$base\webview.html" -Encoding utf8
-
-      # ===== START.BAT =====
-      - name: Create smart start.bat
+      - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
-          echo setlocal >> build\SudoStudio\start.bat
-          echo set "BASE=%%~dp0" >> build\SudoStudio\start.bat
-
-          echo for /r "%%BASE%%" %%%%F in ^(backend.exe^) do set "BACKEND=%%%%F" >> build\SudoStudio\start.bat
-          echo for /r "%%BASE%%" %%%%F in ^(runtime.exe^) do set "RUNTIME=%%%%F" >> build\SudoStudio\start.bat
-          echo for /r "%%BASE%%" %%%%F in ^(codium.exe^) do set "CODIUM=%%%%F" >> build\SudoStudio\start.bat
-
-          echo if defined BACKEND start "" "%%BACKEND%%" >> build\SudoStudio\start.bat
-          echo if defined RUNTIME start "" "%%RUNTIME%%" >> build\SudoStudio\start.bat
-
-          echo timeout /t 3 /nobreak ^>nul >> build\SudoStudio\start.bat
-
-          echo if defined CODIUM start "" "%%CODIUM%%" --extensions-dir "%%BASE%%app\resources\app\extensions" >> build\SudoStudio\start.bat
+          echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(backend.exe^) do set B=%%%%F >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(runtime.exe^) do set R=%%%%F >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(codium.exe^) do set C=%%%%F >> build\SudoStudio\start.bat
+          echo if defined B start "" "%%B%%" >> build\SudoStudio\start.bat
+          echo if defined R start "" "%%R%%" >> build\SudoStudio\start.bat
+          echo timeout /t 2 >> build\SudoStudio\start.bat
+          echo if defined C start "" "%%C%%" --extensions-dir "%%BASE%%app\resources\app\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
-        shell: cmd
         run: choco install innosetup -y
 
-      - name: Generate installer.iss
+      - name: Create installer
         shell: cmd
         run: |
           echo [Setup] > installer.iss
-          echo AppName=SudoStudio Enterprise >> installer.iss
-          echo AppVersion=1.0.0 >> installer.iss
+          echo AppName=SudoStudio >> installer.iss
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
-          echo OutputBaseFilename=SudoStudio-Setup >> installer.iss
 
-          echo. >> installer.iss
           echo [Files] >> installer.iss
-          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
 
-          echo. >> installer.iss
           echo [Run] >> installer.iss
-          echo Filename: "{app}\start.bat"; Flags: nowait postinstall >> installer.iss
+          echo Filename: "{app}\start.bat" >> installer.iss
 
-      - name: Build installer
+      - name: Build
         run: iscc installer.iss
 
-      - name: Upload installer
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: SudoStudio-Installer
-          path: Output\*.exe 
+          name: installer
+          path: Output\*.exe
