@@ -72,33 +72,65 @@ jobs:
           copy /Y source\setup.bat build\SudoStudio\
           copy /Y source\setup.sh build\SudoStudio\
 
-      # ===== EXTENSION CORRIGÉE =====
+      # ===== EXTENSION (FIX FINAL) =====
       - name: Create VS Code extension for Sudo AI
-        shell: cmd
+        shell: powershell
         run: |
-          mkdir build\SudoStudio\app\resources\app\extensions\sudo-ai
+          $base = "build\SudoStudio\app\resources\app\extensions\sudo-ai"
+          New-Item -ItemType Directory -Force -Path $base
 
-          echo {^
-            "name": "sudo-ai",^
-            "displayName": "Sudo AI",^
-            "description": "Copilot-style AI Chat",^
-            "version": "1.0.0",^
-            "engines": { "vscode": "^1.97.0" },^
-            "activationEvents": ["*"],^
-            "main": "./extension.js"^
-          } > build\SudoStudio\app\resources\app\extensions\sudo-ai\package.json
+          @"
+{
+  "name": "sudo-ai",
+  "displayName": "Sudo AI",
+  "description": "Copilot-style AI Chat",
+  "version": "1.0.0",
+  "engines": { "vscode": "^1.97.0" },
+  "activationEvents": ["*"],
+  "main": "./extension.js"
+}
+"@ | Out-File "$base\package.json" -Encoding utf8
 
-          echo const vscode = require('vscode'); > build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
-          echo const fs = require('fs'); >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
-          echo function activate(context) { >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
-          echo const panel = vscode.window.createWebviewPanel('sudoAI','Sudo AI', vscode.ViewColumn.Beside,{enableScripts:true}); >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
-          echo panel.webview.html = fs.readFileSync(__dirname + '\\webview.html','utf8'); >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
-          echo } >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
-          echo exports.activate = activate; >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          @"
+const vscode = require('vscode');
+const fs = require('fs');
 
-          echo ^<html^>^<body^>^<h2^>Sudo AI Chat^</h2^>^<input id="input" style="width:80%"^>^<button onclick="send()"^>Send^</button^>^<div id="msg" style="height:300px;overflow:auto;border:1px solid gray;"^>^</div^>^<script^>function send(){let i=document.getElementById('input');let d=document.getElementById('msg');d.innerHTML+='<div>> '+i.value+'</div>';i.value='';}^</script^>^</body^>^</html^> > build\SudoStudio\app\resources\app\extensions\sudo-ai\webview.html
+function activate(context) {
+    const panel = vscode.window.createWebviewPanel(
+        'sudoAI',
+        'Sudo AI',
+        vscode.ViewColumn.Beside,
+        { enableScripts: true }
+    );
 
-      # ===== START.BAT CORRIGÉ =====
+    panel.webview.html = fs.readFileSync(__dirname + '\\webview.html', 'utf8');
+}
+
+exports.activate = activate;
+"@ | Out-File "$base\extension.js" -Encoding utf8
+
+          @"
+<html>
+<body>
+<h2>Sudo AI Chat</h2>
+<input id="input" style="width:80%">
+<button onclick="send()">Send</button>
+<div id="msg" style="height:300px;overflow:auto;border:1px solid gray;"></div>
+
+<script>
+function send(){
+    let i=document.getElementById('input');
+    let d=document.getElementById('msg');
+    d.innerHTML += '<div>> ' + i.value + '</div>';
+    i.value='';
+}
+</script>
+
+</body>
+</html>
+"@ | Out-File "$base\webview.html" -Encoding utf8
+
+      # ===== START.BAT =====
       - name: Create smart start.bat
         shell: cmd
         run: |
@@ -146,4 +178,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SudoStudio-Installer
-          path: Output\*.exe
+          path: Output\*.exe 
