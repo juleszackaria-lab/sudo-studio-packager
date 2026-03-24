@@ -72,13 +72,12 @@ jobs:
           copy /Y source\setup.bat build\SudoStudio\
           copy /Y source\setup.sh build\SudoStudio\
 
-      # === NOUVELLE ÉTAPE : créer l’extension Sudo AI ===
+      # ===== EXTENSION CORRIGÉE =====
       - name: Create VS Code extension for Sudo AI
         shell: cmd
         run: |
-          mkdir build\SudoStudio\app\extensions\sudo-ai
+          mkdir build\SudoStudio\app\resources\app\extensions\sudo-ai
 
-          REM package.json
           echo {^
             "name": "sudo-ai",^
             "displayName": "Sudo AI",^
@@ -87,46 +86,36 @@ jobs:
             "engines": { "vscode": "^1.97.0" },^
             "activationEvents": ["*"],^
             "main": "./extension.js"^
-          } > build\SudoStudio\app\extensions\sudo-ai\package.json
+          } > build\SudoStudio\app\resources\app\extensions\sudo-ai\package.json
 
-          REM extension.js
-          echo const vscode = require('vscode'); > build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo function activate(context) { >> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo const panel = vscode.window.createWebviewPanel('sudoAI','Sudo AI', vscode.ViewColumn.Beside,{enableScripts:true}); >> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo panel.webview.html = require('fs').readFileSync(__dirname + '\\webview.html','utf8'); >> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo } >> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo exports.activate = activate; >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo const vscode = require('vscode'); > build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          echo const fs = require('fs'); >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          echo function activate(context) { >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          echo const panel = vscode.window.createWebviewPanel('sudoAI','Sudo AI', vscode.ViewColumn.Beside,{enableScripts:true}); >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          echo panel.webview.html = fs.readFileSync(__dirname + '\\webview.html','utf8'); >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          echo } >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
+          echo exports.activate = activate; >> build\SudoStudio\app\resources\app\extensions\sudo-ai\extension.js
 
-          REM webview.html
-          echo ^<html^>^<body^>^<h1^>Sudo AI Chat^</h1^>^<input id="input" placeholder="Entrez un message" style="width:80%"^>^<button onclick="sendMessage()"^>Envoyer^</button^>^<div id="messages" style="margin-top:10px;height:300px;overflow:auto;border:1px solid #ccc;"^>^</div^>^<script^>function sendMessage(){const msg=document.getElementById('input').value;const div=document.getElementById('messages');div.innerHTML+='<div>> '+msg+'</div>';document.getElementById('input').value='';}^</script^>^</body^>^</html^> > build\SudoStudio\app\extensions\sudo-ai\webview.html
+          echo ^<html^>^<body^>^<h2^>Sudo AI Chat^</h2^>^<input id="input" style="width:80%"^>^<button onclick="send()"^>Send^</button^>^<div id="msg" style="height:300px;overflow:auto;border:1px solid gray;"^>^</div^>^<script^>function send(){let i=document.getElementById('input');let d=document.getElementById('msg');d.innerHTML+='<div>> '+i.value+'</div>';i.value='';}^</script^>^</body^>^</html^> > build\SudoStudio\app\resources\app\extensions\sudo-ai\webview.html
 
+      # ===== START.BAT CORRIGÉ =====
       - name: Create smart start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo setlocal >> build\SudoStudio\start.bat
           echo set "BASE=%%~dp0" >> build\SudoStudio\start.bat
-          echo set "LOG=%%BASE%%launch.log" >> build\SudoStudio\start.bat
-
-          echo echo START > "%%LOG%%" >> build\SudoStudio\start.bat
 
           echo for /r "%%BASE%%" %%%%F in ^(backend.exe^) do set "BACKEND=%%%%F" >> build\SudoStudio\start.bat
           echo for /r "%%BASE%%" %%%%F in ^(runtime.exe^) do set "RUNTIME=%%%%F" >> build\SudoStudio\start.bat
-
-          echo for /r "%%BASE%%" %%%%F in ^(VSCodium.exe^) do set "CODIUM=%%%%F" >> build\SudoStudio\start.bat
-          echo if not defined CODIUM for /r "%%BASE%%" %%%%F in ^(codium.exe^) do set "CODIUM=%%%%F" >> build\SudoStudio\start.bat
-
-          echo for /d /r "%%BASE%%" %%%%D in ^(web-ui^) do set "WEBUI=%%%%D" >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(codium.exe^) do set "CODIUM=%%%%F" >> build\SudoStudio\start.bat
 
           echo if defined BACKEND start "" "%%BACKEND%%" >> build\SudoStudio\start.bat
           echo if defined RUNTIME start "" "%%RUNTIME%%" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 /nobreak ^>nul >> build\SudoStudio\start.bat
 
-          echo if defined CODIUM ^( >> build\SudoStudio\start.bat
-          echo if defined WEBUI start "" "%%CODIUM%%" --user-data-dir "%%BASE%%data" --extensions-dir "%%BASE%%app\extensions" "%%WEBUI%%" >> build\SudoStudio\start.bat
-          echo if not defined WEBUI start "" "%%CODIUM%%" --user-data-dir "%%BASE%%data" --extensions-dir "%%BASE%%app\extensions" >> build\SudoStudio\start.bat
-          echo ^) >> build\SudoStudio\start.bat
+          echo if defined CODIUM start "" "%%CODIUM%%" --extensions-dir "%%BASE%%app\resources\app\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         shell: cmd
@@ -138,28 +127,17 @@ jobs:
           echo [Setup] > installer.iss
           echo AppName=SudoStudio Enterprise >> installer.iss
           echo AppVersion=1.0.0 >> installer.iss
-          echo AppPublisher=SudoStudio Lab >> installer.iss
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
-          echo DefaultGroupName=SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
-          echo OutputBaseFilename=SudoStudio-Enterprise-Setup >> installer.iss
-          echo Compression=lzma >> installer.iss
-          echo SolidCompression=yes >> installer.iss
-          echo PrivilegesRequired=lowest >> installer.iss
-          echo ArchitecturesInstallIn64BitMode=x64 >> installer.iss
+          echo OutputBaseFilename=SudoStudio-Setup >> installer.iss
 
           echo. >> installer.iss
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs >> installer.iss
 
           echo. >> installer.iss
-          echo [Icons] >> installer.iss
-          echo Name: "{group}\SudoStudio Enterprise"; Filename: "cmd.exe"; Parameters: "/c ""{app}\start.bat""" >> installer.iss
-          echo Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "cmd.exe"; Parameters: "/c ""{app}\start.bat""" >> installer.iss
-
-          echo. >> installer.iss
           echo [Run] >> installer.iss
-          echo Filename: "cmd.exe"; Parameters: "/c ""{app}\start.bat"""; Flags: nowait postinstall skipifsilent >> installer.iss
+          echo Filename: "{app}\start.bat"; Flags: nowait postinstall >> installer.iss
 
       - name: Build installer
         run: iscc installer.iss
@@ -167,5 +145,5 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: SudoStudio-Enterprise-Installer
+          name: SudoStudio-Installer
           path: Output\*.exe
