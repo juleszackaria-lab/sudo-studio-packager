@@ -38,7 +38,7 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Prepare folders (SAFE)
+      - name: Prepare folders
         shell: cmd
         run: |
           if not exist build mkdir build
@@ -62,10 +62,9 @@ jobs:
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           copy source\product.json build\SudoStudio\app\product.json /Y
-          xcopy source\web-ui build\SudoStudio\app\web-ui\ /E /I /Y
-          copy source\icon.ico icon.ico /Y
+          copy source\logo.ico build\SudoStudio\logo.ico /Y
 
-      # ===== EXTENSION CONNECTÉE AU BACKEND (PORT 5000) =====
+      # ===== EXTENSION IA CONNECTÉE =====
       - name: Create extension
         shell: powershell
         run: |
@@ -142,7 +141,7 @@ async function send(){
 exports.activate = activate;
 "@
 
-      # ===== START PROPRE (AUCUN BUG CHEMIN) =====
+      # ===== START ULTRA STABLE =====
       - name: Create start.bat
         shell: cmd
         run: |
@@ -169,7 +168,7 @@ exports.activate = activate;
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
           echo OutputBaseFilename=SudoStudio-Enterprise >> installer.iss
-          echo SetupIconFile=icon.ico >> installer.iss
+          echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
 
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
@@ -181,7 +180,7 @@ exports.activate = activate;
       - name: Build installer
         run: iscc installer.iss
 
-      - name: Upload
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: SudoStudio-Installer
