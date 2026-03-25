@@ -4,18 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       backend_run_id:
-        description: 'Backend Run ID'
         required: true
       runtime_run_id:
-        description: 'Runtime Run ID'
         required: true
 
 jobs:
   package:
     runs-on: windows-latest
 
+    permissions:
+      actions: read
+      contents: read
+
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           repository: juleszackaria-lab/sudo-studio
@@ -40,18 +42,20 @@ jobs:
           run_id: ${{ github.event.inputs.runtime_run_id }}
           github_token: ${{ secrets.PAT_DOWNLOAD }}
 
-      - name: Prepare folders
+      - name: Prepare folders (SAFE)
+        shell: cmd
         run: |
-          mkdir build
-          mkdir build\SudoStudio
-          mkdir build\SudoStudio\app
+          if not exist "build" mkdir "build"
+          if not exist "build\SudoStudio" mkdir "build\SudoStudio"
+          if not exist "build\SudoStudio\app" mkdir "build\SudoStudio\app"
+          if not exist "build\SudoStudio\app\extensions" mkdir "build\SudoStudio\app\extensions"
 
       - name: Download VSCodium
         shell: powershell
         run: |
-          Invoke-WebRequest "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip" -OutFile vscodium.zip
+          Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip -OutFile vscodium.zip
 
-      - name: Extract
+      - name: Extract VSCodium
         shell: powershell
         run: |
           Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app -Force
@@ -61,52 +65,56 @@ jobs:
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\ /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
-          xcopy /E /I /Y source\web-ui build\SudoStudio\app\web-ui\
+          xcopy source\web-ui build\SudoStudio\app\web-ui\ /E /I /Y
+          copy source\product.json build\SudoStudio\app\product.json /Y
 
-      # ===== EXTENSION FIX DEFINITIF =====
-      - name: Create extension (safe)
-        shell: powershell
+      - name: Create extension (SAFE)
+        shell: cmd
         run: |
-          $dir = "build\SudoStudio\app\resources\app\extensions\sudo-ai"
-          New-Item -ItemType Directory -Force -Path $dir
+          if not exist build\SudoStudio\app\extensions\sudo-ai mkdir build\SudoStudio\app\extensions\sudo-ai
 
-          Set-Content "$dir\package.json" '{"name":"sudo-ai","displayName":"Sudo AI","version":"1.0.0","engines":{"vscode":"^1.97.0"},"activationEvents":["*"],"main":"./extension.js"}'
+          echo {"name":"sudo-ai","main":"extension.js"} > build\SudoStudio\app\extensions\sudo-ai\package.json
 
-          Set-Content "$dir\extension.js" "const vscode=require('vscode');exports.activate=function(){const panel=vscode.window.createWebviewPanel('sudo','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true});panel.webview.html=require('fs').readFileSync(__dirname+'\\\\webview.html','utf8');}"
+          echo const vscode=require('vscode'); > build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo function activate(){} >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo exports.activate=activate; >> build\SudoStudio\app\extensions\sudo-ai\extension.js
 
-          Set-Content "$dir\webview.html" "<html><body><h2>Sudo AI</h2><input id='i'><button onclick='s()'>Send</button><div id='d'></div><script>function s(){let i=document.getElementById('i');let d=document.getElementById('d');d.innerHTML+='<div>> '+i.value+'</div>';i.value='';}</script></body></html>"
-
-      - name: Create start.bat
+      - name: Create start.bat (SAFE)
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
-          echo for /r "%%BASE%%" %%%%F in ^(backend.exe^) do set B=%%%%F >> build\SudoStudio\start.bat
-          echo for /r "%%BASE%%" %%%%F in ^(runtime.exe^) do set R=%%%%F >> build\SudoStudio\start.bat
-          echo for /r "%%BASE%%" %%%%F in ^(codium.exe^) do set C=%%%%F >> build\SudoStudio\start.bat
-          echo if defined B start "" "%%B%%" >> build\SudoStudio\start.bat
-          echo if defined R start "" "%%R%%" >> build\SudoStudio\start.bat
-          echo timeout /t 2 >> build\SudoStudio\start.bat
-          echo if defined C start "" "%%C%%" --extensions-dir "%%BASE%%app\resources\app\extensions" >> build\SudoStudio\start.bat
+
+          echo for /r "%%BASE%%" %%%%F in ^(backend.exe^) do set BACKEND=%%%%F >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(runtime.exe^) do set RUNTIME=%%%%F >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(VSCodium.exe^) do set CODIUM=%%%%F >> build\SudoStudio\start.bat
+
+          echo if defined BACKEND start "" "%%BACKEND%%" >> build\SudoStudio\start.bat
+          echo if defined RUNTIME start "" "%%RUNTIME%%" >> build\SudoStudio\start.bat
+
+          echo timeout /t 3 /nobreak ^>nul >> build\SudoStudio\start.bat
+
+          echo if defined CODIUM start "" "%%CODIUM%%" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      - name: Create installer
+      - name: Create installer.iss
         shell: cmd
         run: |
           echo [Setup] > installer.iss
           echo AppName=SudoStudio >> installer.iss
+          echo AppVersion=1.0 >> installer.iss
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
 
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
 
-          echo [Run] >> installer.iss
-          echo Filename: "{app}\start.bat" >> installer.iss
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
 
-      - name: Build
+      - name: Build installer
         run: iscc installer.iss
 
       - name: Upload
