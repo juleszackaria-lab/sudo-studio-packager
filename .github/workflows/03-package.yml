@@ -1,4 +1,4 @@
-name: 'SudoStudio Final Build'
+name: SudoStudio Final Build
 
 on:
   workflow_dispatch:
@@ -11,6 +11,10 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+
+    permissions:
+      actions: read
+      contents: read
 
     steps:
       - name: Checkout source
@@ -64,7 +68,6 @@ jobs:
           copy source\product.json build\SudoStudio\app\product.json /Y
           copy source\logo.ico build\SudoStudio\logo.ico /Y
 
-      # ===== EXTENSION IA CONNECTÉE =====
       - name: Create extension
         shell: powershell
         run: |
@@ -97,7 +100,7 @@ function activate(context) {
 }
 
 function getHtml(){
-return \`
+return `
 <html>
 <body>
 <h2>Sudo AI</h2>
@@ -135,13 +138,12 @@ async function send(){
 
 </body>
 </html>
-\`;
+`;
 }
 
 exports.activate = activate;
 "@
 
-      # ===== START ULTRA STABLE =====
       - name: Create start.bat
         shell: cmd
         run: |
@@ -149,11 +151,15 @@ exports.activate = activate;
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
           echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
 
-          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
+          echo echo Starting backend... >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" --port 5000 >> build\SudoStudio\start.bat
+
+          echo echo Starting runtime... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
+          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
