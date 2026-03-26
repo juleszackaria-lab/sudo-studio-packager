@@ -1,3 +1,4 @@
+
 name: SudoStudio Final Build
 
 on:
@@ -68,81 +69,26 @@ jobs:
           copy source\product.json build\SudoStudio\app\product.json /Y
           copy source\logo.ico build\SudoStudio\logo.ico /Y
 
-      - name: Create extension
-        shell: powershell
+      - name: Create extension (SAFE)
+        shell: cmd
         run: |
-          $dir="build\SudoStudio\app\extensions\sudo-ai"
-          New-Item -ItemType Directory -Force -Path $dir
+          mkdir build\SudoStudio\app\extensions\sudo-ai
 
-          Set-Content "$dir\package.json" '{
-            "name":"sudo-ai",
-            "displayName":"Sudo AI",
-            "version":"1.0.0",
-            "engines":{"vscode":"^1.97.0"},
-            "activationEvents":["*"],
-            "main":"extension.js"
-          }'
+          echo {> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "name":"sudo-ai",>> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "displayName":"Sudo AI",>> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "version":"1.0.0",>> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "engines":{"vscode":"^1.97.0"},>> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "activationEvents":["*"],>> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "main":"extension.js">> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo }>> build\SudoStudio\app\extensions\sudo-ai\package.json
 
-          Set-Content "$dir\extension.js" @"
-const vscode = require('vscode');
-
-function activate(context) {
-
-    const panel = vscode.window.createWebviewPanel(
-        'sudoAI',
-        'Sudo AI',
-        vscode.ViewColumn.Beside,
-        { enableScripts: true }
-    );
-
-    panel.webview.html = getHtml();
-
-}
-
-function getHtml(){
-return `
-<html>
-<body>
-<h2>Sudo AI</h2>
-
-<input id="input" style="width:80%">
-<button onclick="send()">Send</button>
-
-<div id="chat" style="height:300px;overflow:auto;border:1px solid gray;"></div>
-
-<script>
-async function send(){
-    let input = document.getElementById('input');
-    let chat = document.getElementById('chat');
-
-    let msg = input.value;
-    chat.innerHTML += "<div>> "+msg+"</div>";
-
-    try {
-        const res = await fetch("http://localhost:5000/chat", {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({message: msg})
-        });
-
-        const data = await res.json();
-        chat.innerHTML += "<div><b>AI:</b> "+data.reply+"</div>";
-
-    } catch(e){
-        chat.innerHTML += "<div style='color:red'>Backend non disponible</div>";
-    }
-
-    input.value="";
-}
-</script>
-
-</body>
-</html>
-`;
-}
-
-exports.activate = activate;
-"@
+          echo const vscode = require('vscode');> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo function activate(context){>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo const panel = vscode.window.createWebviewPanel('sudoAI','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true});>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo panel.webview.html = "<h1>Sudo AI actif</h1>";>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo }>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo exports.activate = activate;>> build\SudoStudio\app\extensions\sudo-ai\extension.js
 
       - name: Create start.bat
         shell: cmd
@@ -151,18 +97,15 @@ exports.activate = activate;
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
           echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
 
-          echo echo Starting backend... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" --port 5000 >> build\SudoStudio\start.bat
-
-          echo echo Starting runtime... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
-          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
+        shell: cmd
         run: choco install innosetup -y
 
       - name: Create installer
