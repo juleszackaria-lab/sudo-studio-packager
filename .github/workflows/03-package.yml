@@ -2,11 +2,6 @@ name: SudoStudio Final Build
 
 on:
   workflow_dispatch:
-    inputs:
-      backend_run_id:
-        required: true
-      runtime_run_id:
-        required: true
 
 jobs:
   build:
@@ -15,9 +10,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          repository: juleszackaria-lab/sudo-studio
-          path: source
 
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
@@ -25,7 +17,7 @@ jobs:
           repo: juleszackaria-lab/sudo-studio
           name: backend-exe
           path: build/backend
-          run_id: ${{ github.event.inputs.backend_run_id }}
+          run_id: 23684339778
 
       - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
@@ -33,85 +25,97 @@ jobs:
           repo: juleszackaria-lab/sudo-studio
           name: runtime-exe
           path: build/runtime
-          run_id: ${{ github.event.inputs.runtime_run_id }}
+          run_id: 23684715163
 
       - name: Prepare folders
-        shell: powershell
+        shell: cmd
         run: |
-          New-Item -ItemType Directory -Force -Path build\SudoStudio\app\extensions
+          if not exist build mkdir build
+          if not exist build\SudoStudio mkdir build\SudoStudio
+          if not exist build\SudoStudio\app mkdir build\SudoStudio\app
+          if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
 
       - name: Download VSCodium
-        shell: powershell
+        shell: cmd
         run: |
-          Invoke-WebRequest "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip" -OutFile vscodium.zip
+          curl -L -o vscodium.zip https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip
 
       - name: Extract VSCodium
         shell: powershell
-        run: |
-          Expand-Archive vscodium.zip -DestinationPath build\SudoStudio\app -Force
+        run: Expand-Archive vscodium.zip build\SudoStudio\app -Force
 
       - name: Copy files
-        shell: powershell
+        shell: cmd
         run: |
-          Copy-Item build\backend\backend.exe build\SudoStudio\app\backend.exe -Force
-          Copy-Item build\runtime\server.exe build\SudoStudio\app\runtime.exe -Force
-          Copy-Item source\product.json build\SudoStudio\app\product.json -Force
-          Copy-Item source\logo.ico build\SudoStudio\logo.ico -Force
+          copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
+          copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
+          copy logo.ico build\SudoStudio\logo.ico /Y
 
-      - name: Create extension SAFE
-        shell: powershell
+      REM =========================
+      REM EXTENSION IA
+      REM =========================
+      - name: Create extension
+        shell: cmd
         run: |
-          $dir="build\SudoStudio\app\extensions\sudo-ai"
-          New-Item -ItemType Directory -Force -Path $dir
+          mkdir build\SudoStudio\app\extensions\sudo-ai
 
-          Add-Content "$dir\package.json" '{'
-          Add-Content "$dir\package.json" '"name":"sudo-ai",'
-          Add-Content "$dir\package.json" '"displayName":"Sudo AI",'
-          Add-Content "$dir\package.json" '"version":"1.0.0",'
-          Add-Content "$dir\package.json" '"engines":{"vscode":"^1.97.0"},'
-          Add-Content "$dir\package.json" '"activationEvents":["*"],'
-          Add-Content "$dir\package.json" '"main":"extension.js"'
-          Add-Content "$dir\package.json" '}'
+          echo { > build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "name":"sudo-ai", >> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "displayName":"Sudo AI", >> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "version":"1.0.0", >> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "engines":{"vscode":"^1.97.0"}, >> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "activationEvents":["*"], >> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo "main":"extension.js" >> build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo } >> build\SudoStudio\app\extensions\sudo-ai\package.json
 
-          Add-Content "$dir\extension.js" 'const vscode=require("vscode");'
-          Add-Content "$dir\extension.js" 'function activate(context){'
-          Add-Content "$dir\extension.js" 'const panel=vscode.window.createWebviewPanel("sudoAI","Sudo AI",vscode.ViewColumn.Beside,{enableScripts:true});'
-          Add-Content "$dir\extension.js" 'panel.webview.html="<html><body><h2>Sudo AI</h2><input id=input><button onclick=send()>Send</button><div id=chat></div><script>async function send(){let i=document.getElementById(\"input\");let c=document.getElementById(\"chat\");let m=i.value;c.innerHTML+=\"<div>\"+m+\"</div>\";try{let r=await fetch(\"http://localhost:5000/chat\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify({message:m})});let d=await r.json();c.innerHTML+=\"<div>\"+d.reply+\"</div>\";}catch(e){c.innerHTML+=\"<div>ERR</div>\";}i.value=\"\";}</script></body></html>";'
-          Add-Content "$dir\extension.js" '}'
-          Add-Content "$dir\extension.js" 'exports.activate=activate;'
+          echo const vscode=require('vscode'); > build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo function activate(){ >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo const panel=vscode.window.createWebviewPanel('sudoAI','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true}); >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo panel.webview.html=`<html><body><h2>Sudo AI</h2><input id=input style=width:80%%><button onclick=send()>Send</button><div id=chat style=height:300px;overflow:auto;border:1px solid gray;></div><script>async function send(){let i=document.getElementById('input');let c=document.getElementById('chat');let m=i.value;c.innerHTML+=`<div>^> ${m}</div>`;try{let r=await fetch('http://localhost:5000/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});let d=await r.json();c.innerHTML+=`<div><b>AI:</b> ${d.reply}</div>`;}catch(e){c.innerHTML+=`<div style=color:red>Backend OFF</div>`;}i.value='';}</script></body></html>`; >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo } >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo exports.activate=activate; >> build\SudoStudio\app\extensions\sudo-ai\extension.js
 
-      - name: Create start.bat SAFE
-        shell: powershell
+      REM =========================
+      REM START.BAT PROPRE
+      REM =========================
+      - name: Create start.bat
+        shell: cmd
         run: |
-          $bat="build\SudoStudio\start.bat"
-          Add-Content $bat "@echo off"
-          Add-Content $bat "set APP=%~dp0app"
-          Add-Content $bat "start \"\" \"%APP%\backend.exe\""
-          Add-Content $bat "start \"\" \"%APP%\runtime.exe\""
-          Add-Content $bat "timeout /t 3"
-          Add-Content $bat "start \"\" \"%APP%\VSCodium.exe\" --extensions-dir \"%APP%\extensions\""
+          echo @echo off > build\SudoStudio\start.bat
+          echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
+          echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
+
+          echo echo Starting backend... >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
+
+          echo echo Starting runtime... >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
+
+          echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
+
+          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
       - name: Create installer
-        shell: powershell
+        shell: cmd
         run: |
-          $iss="installer.iss"
-          Add-Content $iss "[Setup]"
-          Add-Content $iss "AppName=SudoStudio Enterprise"
-          Add-Content $iss "AppVersion=1.0"
-          Add-Content $iss "DefaultDirName={autopf}\SudoStudio"
-          Add-Content $iss "OutputDir=Output"
-          Add-Content $iss "OutputBaseFilename=SudoStudio-Enterprise"
-          Add-Content $iss "SetupIconFile=build\SudoStudio\logo.ico"
+          echo [Setup] > installer.iss
+          echo AppName=SudoStudio Enterprise >> installer.iss
+          echo AppVersion=1.0 >> installer.iss
+          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
+          echo OutputDir=Output >> installer.iss
+          echo OutputBaseFilename=SudoStudio-Setup >> installer.iss
+          echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
 
-          Add-Content $iss "[Files]"
-          Add-Content $iss 'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs'
+          echo [Files] >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
 
-          Add-Content $iss "[Icons]"
-          Add-Content $iss 'Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat"'
-          Add-Content $iss 'Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"'
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
+          echo Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
 
       - name: Build installer
         run: iscc installer.iss
@@ -119,5 +123,5 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: SudoStudio-Installer
+          name: SudoStudio Installer
           path: Output\*.exe
