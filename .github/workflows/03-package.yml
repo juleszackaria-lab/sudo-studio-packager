@@ -63,7 +63,7 @@ jobs:
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           copy source\product.json build\SudoStudio\app\product.json /Y
-          copy source\favicon.ico build\SudoStudio\logo.ico /Y
+          copy source\logo.ico build\SudoStudio\logo.ico /Y
 
       - name: Create extension FINAL
         shell: cmd
@@ -109,7 +109,7 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      - name: Create installer
+      - name: Create installer script
         shell: cmd
         run: |
           echo [Setup] > installer.iss
