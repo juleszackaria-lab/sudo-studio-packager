@@ -22,7 +22,6 @@ jobs:
         with:
           repository: juleszackaria-lab/sudo-studio
           path: source
-          token: ${{ secrets.PAT_DOWNLOAD }}
 
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
@@ -31,7 +30,6 @@ jobs:
           name: backend-exe
           path: build/backend
           run_id: ${{ github.event.inputs.backend_run_id }}
-          github_token: ${{ secrets.PAT_DOWNLOAD }}
 
       - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
@@ -40,7 +38,6 @@ jobs:
           name: runtime-exe
           path: build/runtime
           run_id: ${{ github.event.inputs.runtime_run_id }}
-          github_token: ${{ secrets.PAT_DOWNLOAD }}
 
       - name: Prepare folders
         shell: cmd
@@ -66,7 +63,7 @@ jobs:
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           copy source\product.json build\SudoStudio\app\product.json /Y
-          copy source\logo.ico build\SudoStudio\logo.ico /Y
+          copy source\favicon.ico build\SudoStudio\logo.ico /Y
 
       - name: Create extension FINAL
         shell: cmd
