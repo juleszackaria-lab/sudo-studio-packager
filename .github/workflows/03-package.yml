@@ -13,18 +13,12 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # ================================
-      # CHECKOUT (PUBLIC REPO)
-      # ================================
       - name: Checkout source
         uses: actions/checkout@v4
         with:
           repository: juleszackaria-lab/sudo-studio
           path: source
 
-      # ================================
-      # DOWNLOAD ARTIFACTS
-      # ================================
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
         with:
@@ -41,9 +35,6 @@ jobs:
           path: build/runtime
           run_id: ${{ github.event.inputs.runtime_run_id }}
 
-      # ================================
-      # PREPARE FOLDERS (NO ERROR)
-      # ================================
       - name: Prepare folders
         shell: cmd
         run: |
@@ -52,9 +43,6 @@ jobs:
           if not exist build\SudoStudio\app mkdir build\SudoStudio\app
           if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
 
-      # ================================
-      # DOWNLOAD VSCODIUM
-      # ================================
       - name: Download VSCodium
         shell: powershell
         run: |
@@ -65,9 +53,6 @@ jobs:
         run: |
           Expand-Archive -Path "vscodium.zip" -DestinationPath "build\SudoStudio\app" -Force
 
-      # ================================
-      # COPY FILES
-      # ================================
       - name: Copy files
         shell: cmd
         run: |
@@ -76,27 +61,24 @@ jobs:
           copy source\product.json build\SudoStudio\app\product.json /Y
           copy source\logo.ico build\SudoStudio\logo.ico /Y
 
-      # ================================
-      # CREATE EXTENSION (SAFE POWERSHELL)
-      # ================================
       - name: Create extension
         shell: powershell
         run: |
           $dir="build\SudoStudio\app\extensions\sudo-ai"
           New-Item -ItemType Directory -Force -Path $dir
 
-          @'
-{
-  "name": "sudo-ai",
-  "displayName": "Sudo AI",
-  "version": "1.0.0",
-  "engines": { "vscode": "^1.97.0" },
-  "activationEvents": ["*"],
-  "main": "extension.js"
-}
-'@ | Set-Content "$dir\package.json"
+          $pkg = @{
+            name = "sudo-ai"
+            displayName = "Sudo AI"
+            version = "1.0.0"
+            engines = @{ vscode = "^1.97.0" }
+            activationEvents = @("*")
+            main = "extension.js"
+          } | ConvertTo-Json -Depth 5
 
-          @'
+          Set-Content "$dir\package.json" $pkg
+
+          $js = @"
 const vscode = require("vscode");
 
 function activate(context) {
@@ -111,72 +93,25 @@ function activate(context) {
 }
 
 function getHtml(){
-return `
-<html>
-<body>
-<h2>Sudo AI</h2>
-
-<input id="input" style="width:80%">
-<button onclick="send()">Send</button>
-
-<div id="chat" style="height:300px;overflow:auto;border:1px solid gray;"></div>
-
-<script>
-async function send(){
-    let input = document.getElementById('input');
-    let chat = document.getElementById('chat');
-
-    let msg = input.value;
-    chat.innerHTML += "<div>> " + msg + "</div>";
-
-    try {
-        const res = await fetch("http://localhost:5000/chat", {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({message: msg})
-        });
-
-        const data = await res.json();
-        chat.innerHTML += "<div><b>AI:</b> " + data.reply + "</div>";
-
-    } catch(e){
-        chat.innerHTML += "<div style='color:red'>Backend non disponible</div>";
-    }
-
-    input.value="";
-}
-</script>
-
-</body>
-</html>
-`;
+return "<html><body><h2>Sudo AI</h2><input id='input' style='width:80%'><button onclick='send()'>Send</button><div id='chat' style='height:300px;overflow:auto;border:1px solid gray;'></div><script>async function send(){let i=document.getElementById('input');let c=document.getElementById('chat');let m=i.value;c.innerHTML+='<div>> '+m+'</div>';try{let r=await fetch('http://localhost:5000/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});let d=await r.json();c.innerHTML+='<div><b>AI:</b> '+d.reply+'</div>';}catch(e){c.innerHTML+='<div style=color:red>Backend OFF</div>';}i.value='';}</script></body></html>";
 }
 
 exports.activate = activate;
-'@ | Set-Content "$dir\extension.js"
+"@
 
-      # ================================
-      # START.BAT (ULTRA STABLE)
-      # ================================
+          Set-Content "$dir\extension.js" $js
+
       - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
           echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
-
-          echo echo Starting SudoStudio... >> build\SudoStudio\start.bat
-
           echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
-
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
-
           echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
-      # ================================
-      # INSTALLER
-      # ================================
       - name: Install Inno Setup
         run: choco install innosetup -y
 
