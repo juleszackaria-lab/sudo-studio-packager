@@ -1,4 +1,3 @@
-
 name: SudoStudio Final Build
 
 on:
@@ -69,7 +68,7 @@ jobs:
           copy source\product.json build\SudoStudio\app\product.json /Y
           copy source\logo.ico build\SudoStudio\logo.ico /Y
 
-      - name: Create extension (SAFE)
+      - name: Create extension FINAL
         shell: cmd
         run: |
           mkdir build\SudoStudio\app\extensions\sudo-ai
@@ -83,29 +82,34 @@ jobs:
           echo "main":"extension.js">> build\SudoStudio\app\extensions\sudo-ai\package.json
           echo }>> build\SudoStudio\app\extensions\sudo-ai\package.json
 
-          echo const vscode = require('vscode');> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo const vscode=require('vscode');> build\SudoStudio\app\extensions\sudo-ai\extension.js
           echo function activate(context){>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo const panel = vscode.window.createWebviewPanel('sudoAI','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true});>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo panel.webview.html = "<h1>Sudo AI actif</h1>";>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo const panel=vscode.window.createWebviewPanel('sudoAI','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true});>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo panel.webview.html=getHtml();>> build\SudoStudio\app\extensions\sudo-ai\extension.js
           echo }>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo exports.activate = activate;>> build\SudoStudio\app\extensions\sudo-ai\extension.js
 
-      - name: Create start.bat
+          echo function getHtml(){return `^<html^>^<body^>^<h2^>Sudo AI^</h2^>^<input id="msg" style="width:80%"^>^<button onclick="send()"^>Send^</button^>^<div id="chat" style="height:300px;overflow:auto;border:1px solid gray;"^>^</div^>^<script^>async function send(){let m=document.getElementById('msg').value;let c=document.getElementById('chat');c.innerHTML+='<div>> '+m+'</div>';try{let r=await fetch('http://localhost:5000/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});let d=await r.json();c.innerHTML+='<div><b>AI:</b> '+d.reply+'</div>';}catch(e){c.innerHTML+='<div style="color:red">backend OFF</div>';}document.getElementById('msg').value='';}^</script^>^</body^>^</html^>`;}>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+
+          echo exports.activate=activate;>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+
+      - name: Create start.bat FINAL
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
-          echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
 
-          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" --port 5000 >> build\SudoStudio\start.bat
-          echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(backend.exe^) do set BACK=%%%%F >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(runtime.exe^) do set RUN=%%%%F >> build\SudoStudio\start.bat
+          echo for /r "%%BASE%%" %%%%F in ^(VSCodium.exe^) do set COD=%%%%F >> build\SudoStudio\start.bat
+
+          echo if defined BACK start "" "%%BACK%%" >> build\SudoStudio\start.bat
+          echo if defined RUN start "" "%%RUN%%" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
-          echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
+          echo if defined COD start "" "%%COD%%" --extensions-dir "%%BASE%%app\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
-        shell: cmd
         run: choco install innosetup -y
 
       - name: Create installer
