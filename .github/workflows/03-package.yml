@@ -51,9 +51,9 @@ jobs:
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           copy logo.ico build\SudoStudio\logo.ico /Y
 
-      REM =========================
-      REM EXTENSION IA
-      REM =========================
+      # =========================
+      # EXTENSION SIMPLE (SAFE)
+      # =========================
       - name: Create extension
         shell: cmd
         run: |
@@ -70,14 +70,13 @@ jobs:
 
           echo const vscode=require('vscode'); > build\SudoStudio\app\extensions\sudo-ai\extension.js
           echo function activate(){ >> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo const panel=vscode.window.createWebviewPanel('sudoAI','Sudo AI',vscode.ViewColumn.Beside,{enableScripts:true}); >> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo panel.webview.html=`<html><body><h2>Sudo AI</h2><input id=input style=width:80%%><button onclick=send()>Send</button><div id=chat style=height:300px;overflow:auto;border:1px solid gray;></div><script>async function send(){let i=document.getElementById('input');let c=document.getElementById('chat');let m=i.value;c.innerHTML+=`<div>^> ${m}</div>`;try{let r=await fetch('http://localhost:5000/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m})});let d=await r.json();c.innerHTML+=`<div><b>AI:</b> ${d.reply}</div>`;}catch(e){c.innerHTML+=`<div style=color:red>Backend OFF</div>`;}i.value='';}</script></body></html>`; >> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo vscode.window.showInformationMessage('Sudo AI Loaded'); >> build\SudoStudio\app\extensions\sudo-ai\extension.js
           echo } >> build\SudoStudio\app\extensions\sudo-ai\extension.js
           echo exports.activate=activate; >> build\SudoStudio\app\extensions\sudo-ai\extension.js
 
-      REM =========================
-      REM START.BAT PROPRE
-      REM =========================
+      # =========================
+      # START.BAT ULTRA SAFE
+      # =========================
       - name: Create start.bat
         shell: cmd
         run: |
@@ -85,15 +84,11 @@ jobs:
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
           echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
 
-          echo echo Starting backend... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-
-          echo echo Starting runtime... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
-          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
           echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
