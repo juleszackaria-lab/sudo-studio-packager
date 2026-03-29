@@ -48,7 +48,7 @@ jobs:
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
-          if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
+          if exist Iogo.ico copy Iogo.ico build\SudoStudio\logo.ico /Y
 
       # ===== EXTENSION SAFE =====
       - name: Create extension
