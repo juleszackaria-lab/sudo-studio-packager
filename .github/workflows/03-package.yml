@@ -28,141 +28,60 @@ jobs:
           run_id: 23684715163
 
       - name: Prepare folders
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force -Path build | Out-Null
-          New-Item -ItemType Directory -Force -Path build\SudoStudio | Out-Null
-          New-Item -ItemType Directory -Force -Path build\SudoStudio\app | Out-Null
-          New-Item -ItemType Directory -Force -Path build\SudoStudio\app\extensions | Out-Null
+        run: mkdir build && mkdir build\SudoStudio && mkdir build\SudoStudio\app && mkdir build\SudoStudio\app\extensions
+        shell: cmd
 
       - name: Download VSCodium
         shell: powershell
-        run: |
-          Invoke-WebRequest "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip" -OutFile "vscodium.zip"
+        run: Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip -OutFile vscodium.zip
 
       - name: Extract VSCodium
         shell: powershell
-        run: |
-          Expand-Archive -Path "vscodium.zip" -DestinationPath "build\SudoStudio\app" -Force
+        run: Expand-Archive vscodium.zip build\SudoStudio\app -Force
 
       - name: Copy files
-        shell: powershell
+        shell: cmd
         run: |
-          Copy-Item "build/backend/backend.exe" "build/SudoStudio/app/backend.exe" -Force
-          Copy-Item "build/runtime/server.exe" "build/SudoStudio/app/runtime.exe" -Force
-
-          if (Test-Path "logo.ico") {
-            Copy-Item "logo.ico" "build/SudoStudio/logo.ico" -Force
-          }
+          copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
+          copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
+          if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
       - name: Create extension
-        shell: powershell
+        shell: cmd
         run: |
-          $dir = "build/SudoStudio/app/extensions/sudo-ai"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-
-          Set-Content "$dir/package.json" '{"name":"sudo-ai","displayName":"Sudo AI","version":"1.0.0","engines":{"vscode":"^1.97.0"},"activationEvents":["*"],"main":"extension.js"}'
-
-          @"
-const vscode = require("vscode");
-
-function activate(context) {
-    const panel = vscode.window.createWebviewPanel(
-        "sudoAI",
-        "Sudo AI",
-        vscode.ViewColumn.Beside,
-        { enableScripts: true }
-    );
-
-    panel.webview.html = getHtml();
-}
-
-function getHtml(){
-return `
-<!DOCTYPE html>
-<html>
-<body>
-
-<h2>Sudo AI</h2>
-
-<input id="msg" style="width:75%">
-<button onclick="send()">Send</button>
-
-<div id="chat" style="height:300px;overflow:auto;border:1px solid gray;"></div>
-
-<script>
-async function send(){
-    let input = document.getElementById("msg");
-    let chat = document.getElementById("chat");
-
-    let message = input.value;
-    if(!message) return;
-
-    chat.innerHTML += "<div><b>You:</b> "+message+"</div>";
-
-    try {
-        const res = await fetch("http://localhost:5000/chat", {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({message: message})
-        });
-
-        const data = await res.json();
-        chat.innerHTML += "<div><b>AI:</b> "+data.reply+"</div>";
-    } catch(e){
-        chat.innerHTML += "<div style='color:red'>Backend offline</div>";
-    }
-
-    input.value="";
-}
-</script>
-
-</body>
-</html>
-`;
-}
-
-exports.activate = activate;
-"@ | Set-Content "$dir/extension.js"
+          mkdir build\SudoStudio\app\extensions\sudo-ai
+          echo {"name":"sudo-ai","main":"extension.js"} > build\SudoStudio\app\extensions\sudo-ai\package.json
+          echo const vscode=require('vscode');function activate(c){vscode.window.showInformationMessage('Sudo AI Ready');}exports.activate=activate; > build\SudoStudio\app\extensions\sudo-ai\extension.js
 
       - name: Create start.bat
-        shell: powershell
+        shell: cmd
         run: |
-          @"
-@echo off
-set BASE=%~dp0
-set APP=%BASE%app
-
-if exist "%APP%\backend.exe" start "" "%APP%\backend.exe"
-if exist "%APP%\runtime.exe" start "" "%APP%\runtime.exe"
-
-timeout /t 3 >nul
-
-if exist "%APP%\VSCodium.exe" start "" "%APP%\VSCodium.exe" --extensions-dir "%APP%\extensions"
-"@ | Set-Content "build/SudoStudio/start.bat"
+          echo @echo off > build\SudoStudio\start.bat
+          echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
+          echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
+          echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
       - name: Create installer
-        shell: powershell
+        shell: cmd
         run: |
-          @"
-[Setup]
-AppName=SudoStudio Enterprise
-AppVersion=1.0
-DefaultDirName={autopf}\SudoStudio
-OutputDir=Output
-OutputBaseFilename=SudoStudio-Enterprise
-SetupIconFile=build\SudoStudio\logo.ico
-
-[Files]
-Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs
-
-[Icons]
-Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
-Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
-"@ | Set-Content "installer.iss"
+          echo [Setup] > installer.iss
+          echo AppName=SudoStudio >> installer.iss
+          echo AppVersion=1.0 >> installer.iss
+          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
+          echo OutputDir=Output >> installer.iss
+          echo OutputBaseFilename=SudoStudio >> installer.iss
+          echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
+          echo [Files] >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
+          echo Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
 
       - name: Build installer
         run: iscc installer.iss
@@ -170,5 +89,5 @@ Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat"
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: SudoStudio-Installer
+          name: installer
           path: Output\*.exe
