@@ -1,4 +1,4 @@
-name: SudoStudio Startup Build
+name: SudoStudio Stable Build
 
 on:
   workflow_dispatch:
@@ -50,108 +50,21 @@ jobs:
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
-      # ===== EXTENSION STARTUP UI =====
-      - name: Create AI extension PRO
-        shell: powershell
+      # ===== EXTENSION SAFE =====
+      - name: Create extension
+        shell: cmd
         run: |
-          $dir="build/SudoStudio/app/extensions/sudo-ai"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          mkdir build\SudoStudio\app\extensions\sudo-ai
 
-          Set-Content "$dir/package.json" '{"name":"sudo-ai","displayName":"Sudo AI","version":"1.0.0","engines":{"vscode":"^1.97.0"},"activationEvents":["*"],"main":"extension.js"}'
+          echo { "name":"sudo-ai","main":"extension.js" } > build\SudoStudio\app\extensions\sudo-ai\package.json
 
-          @"
-const vscode = require('vscode');
+          echo const vscode = require('vscode');> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo function activate(context){>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo vscode.window.showInformationMessage('Sudo AI Loaded');>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo }>> build\SudoStudio\app\extensions\sudo-ai\extension.js
+          echo exports.activate = activate;>> build\SudoStudio\app\extensions\sudo-ai\extension.js
 
-function activate(context) {
-    const panel = vscode.window.createWebviewPanel(
-        'sudoAI',
-        'Sudo AI',
-        vscode.ViewColumn.Beside,
-        { enableScripts: true }
-    );
-
-    panel.webview.html = getHtml();
-}
-
-function getHtml(){
-return `
-<!DOCTYPE html>
-<html>
-<body style="margin:0;display:flex;height:100vh;font-family:sans-serif;background:#1e1e1e;color:white">
-
-<!-- SIDEBAR -->
-<div style="width:220px;background:#252526;padding:10px;">
-<h3>Sudo AI</h3>
-<select id="model" style="width:100%">
-<option>default</option>
-<option>fast</option>
-<option>pro</option>
-</select>
-<br><br>
-<button onclick="clearChat()">Clear</button>
-</div>
-
-<!-- CHAT -->
-<div style="flex:1;display:flex;flex-direction:column">
-<div id="chat" style="flex:1;overflow:auto;padding:10px"></div>
-
-<div style="display:flex;border-top:1px solid #444">
-<input id="msg" style="flex:1;padding:10px;background:#1e1e1e;color:white;border:none">
-<button onclick="send()" style="width:100px">Send</button>
-</div>
-</div>
-
-<script>
-async function send(){
-    let input = document.getElementById("msg");
-    let chat = document.getElementById("chat");
-    let model = document.getElementById("model").value;
-
-    let message = input.value;
-    if(!message) return;
-
-    chat.innerHTML += "<div><b>You:</b> "+message+"</div>";
-
-    let ports = [5000,5001,5002,5003];
-    let success = false;
-
-    for(let p of ports){
-        try{
-            const res = await fetch("http://localhost:"+p+"/chat", {
-                method:"POST",
-                headers:{"Content-Type":"application/json"},
-                body: JSON.stringify({message:message, model:model})
-            });
-
-            const data = await res.json();
-            chat.innerHTML += "<div style='color:lightgreen'><b>AI:</b> "+data.reply+"</div>";
-            success = true;
-            break;
-        }catch(e){}
-    }
-
-    if(!success){
-        chat.innerHTML += "<div style='color:red'>Backend non trouvé</div>";
-    }
-
-    input.value="";
-    chat.scrollTop = chat.scrollHeight;
-}
-
-function clearChat(){
-    document.getElementById("chat").innerHTML="";
-}
-</script>
-
-</body>
-</html>
-`;
-}
-
-exports.activate = activate;
-"@ | Set-Content "$dir/extension.js"
-
-      # ===== START PRO =====
+      # ===== START SAFE =====
       - name: Create start.bat
         shell: cmd
         run: |
@@ -159,12 +72,12 @@ exports.activate = activate;
           echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
           echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
 
-          echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-          echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
-          echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
+          echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
@@ -173,17 +86,18 @@ exports.activate = activate;
         shell: cmd
         run: |
           echo [Setup] > installer.iss
-          echo AppName=SudoStudio Enterprise >> installer.iss
+          echo AppName=SudoStudio >> installer.iss
           echo AppVersion=1.0 >> installer.iss
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
-          echo OutputBaseFilename=SudoStudio-Enterprise >> installer.iss
+          echo OutputBaseFilename=SudoStudio >> installer.iss
           echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
+
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
+
           echo [Icons] >> installer.iss
-          echo Name: "{group}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
-          echo Name: "{commondesktop}\SudoStudio Enterprise"; Filename: "{app}\start.bat" >> installer.iss
+          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
 
       - name: Build installer
         run: iscc installer.iss
@@ -191,5 +105,5 @@ exports.activate = activate;
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: SudoStudio-Startup
+          name: installer
           path: Output\*.exe
