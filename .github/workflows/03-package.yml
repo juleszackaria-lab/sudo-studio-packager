@@ -48,7 +48,7 @@ jobs:
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
-          if exist Iogo.ico copy Iogo.ico build\SudoStudio\logo.ico /Y
+          if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
       # ===== EXTENSION SAFE =====
       - name: Create extension
@@ -82,6 +82,7 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
 
+      # ===== INSTALLER FIXED =====
       - name: Create installer
         shell: cmd
         run: |
@@ -91,7 +92,9 @@ jobs:
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
           echo OutputBaseFilename=SudoStudio >> installer.iss
-          echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
+
+          REM ✅ FIX : icon optionnel (plus de crash)
+          if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
 
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
