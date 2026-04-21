@@ -17,7 +17,7 @@ jobs:
           repo: juleszackaria-lab/sudo-studio
           name: backend-exe
           path: build/backend
-          run_id: 23684339778
+          run_id: 24709608974
 
       - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
@@ -43,46 +43,56 @@ jobs:
         shell: powershell
         run: Expand-Archive vscodium.zip build\SudoStudio\app -Force
 
-      - name: Copy files
+      - name: Copy backend and runtime
         shell: cmd
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
-      # ===== EXTENSION SAFE =====
-      - name: Create extension
+      - name: Copy Sudo AI Extension
         shell: cmd
         run: |
-          mkdir build\SudoStudio\app\extensions\sudo-ai
+          if exist sudo-ai-extension (
+            xcopy sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
+          ) else (
+            echo ERROR: sudo-ai-extension folder missing
+            exit /b 1
+          )
 
-          echo { "name":"sudo-ai","main":"extension.js" } > build\SudoStudio\app\extensions\sudo-ai\package.json
-
-          echo const vscode = require('vscode');> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo function activate(context){>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo vscode.window.showInformationMessage('Sudo AI Loaded');>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo }>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-          echo exports.activate = activate;>> build\SudoStudio\app\extensions\sudo-ai\extension.js
-
-      # ===== START SAFE =====
       - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
-          echo set BASE=%%~dp0 >> build\SudoStudio\start.bat
-          echo set APP=%%BASE%%app >> build\SudoStudio\start.bat
+          echo cd /d "%%~dp0" >> build\SudoStudio\start.bat
 
-          echo if exist "%%APP%%\backend.exe" start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-          echo if exist "%%APP%%\runtime.exe" start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
+          echo echo Starting Sudo Studio... >> build\SudoStudio\start.bat
+          echo set APP=%%cd%%\app >> build\SudoStudio\start.bat
+
+          echo echo Checking required files... >> build\SudoStudio\start.bat
+
+          echo if not exist "%%APP%%\backend.exe" (echo backend.exe missing & pause & exit) >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\runtime.exe" (echo runtime.exe missing & pause & exit) >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit) >> build\SudoStudio\start.bat
+
+          echo echo Launching backend... >> build\SudoStudio\start.bat
+          echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
+
+          echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
+
+          echo echo Launching runtime... >> build\SudoStudio\start.bat
+          echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
 
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
-          echo if exist "%%APP%%\VSCodium.exe" start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
+          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
+          echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
+
+          echo exit >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      # ===== INSTALLER FIXED =====
       - name: Create installer
         shell: cmd
         run: |
@@ -93,7 +103,6 @@ jobs:
           echo OutputDir=Output >> installer.iss
           echo OutputBaseFilename=SudoStudio >> installer.iss
 
-          REM ✅ FIX : icon optionnel (plus de crash)
           if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
 
           echo [Files] >> installer.iss
