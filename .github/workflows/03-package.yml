@@ -11,6 +11,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 🔥 CLONE DU REPO SOURCE (backend + extension)
+      - name: Clone source repo
+        run: git clone https://github.com/juleszackaria-lab/sudo-studio.git source
+
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
         with:
@@ -50,42 +54,37 @@ jobs:
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
+      # ✅ COPIE EXTENSION DEPUIS LE REPO CLONÉ
       - name: Copy Sudo AI Extension
         shell: cmd
         run: |
-          if exist sudo-ai-extension (
-            xcopy sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
+          if exist source\sudo-ai-extension (
+            xcopy source\sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
           ) else (
-            echo ERROR: sudo-ai-extension folder missing
+            echo ERROR: sudo-ai-extension not found in source repo
+            dir source
             exit /b 1
           )
 
+      # 🔥 START.BAT ULTRA STABLE
       - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo cd /d "%%~dp0" >> build\SudoStudio\start.bat
 
-          echo echo Starting Sudo Studio... >> build\SudoStudio\start.bat
           echo set APP=%%cd%%\app >> build\SudoStudio\start.bat
-
-          echo echo Checking required files... >> build\SudoStudio\start.bat
 
           echo if not exist "%%APP%%\backend.exe" (echo backend.exe missing & pause & exit) >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\runtime.exe" (echo runtime.exe missing & pause & exit) >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit) >> build\SudoStudio\start.bat
 
-          echo echo Launching backend... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-
           echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
 
-          echo echo Launching runtime... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
-
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
-          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
 
           echo exit >> build\SudoStudio\start.bat
