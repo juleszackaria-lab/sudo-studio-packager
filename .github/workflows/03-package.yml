@@ -11,7 +11,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 🔐 Clone repo source (privé compatible)
       - name: Clone source repo
         run: git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/juleszackaria-lab/sudo-studio.git source
 
@@ -54,7 +53,6 @@ jobs:
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
-      # 🔥 Copier extension depuis repo cloné
       - name: Copy Sudo AI Extension
         shell: cmd
         run: |
@@ -66,18 +64,25 @@ jobs:
             exit /b 1
           )
 
-      # 🔥 START.BAT ULTRA STABLE
+      # ✅ START.BAT FIXÉ (ULTRA STABLE)
       - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo cd /d "%%~dp0" >> build\SudoStudio\start.bat
-
           echo set APP=%%cd%%\app >> build\SudoStudio\start.bat
 
-          echo if not exist "%%APP%%\backend.exe" (echo backend.exe missing & pause & exit) >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\runtime.exe" (echo runtime.exe missing & pause & exit) >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit) >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\backend.exe" echo backend.exe missing >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\backend.exe" pause >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\backend.exe" exit >> build\SudoStudio\start.bat
+
+          echo if not exist "%%APP%%\runtime.exe" echo runtime.exe missing >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\runtime.exe" pause >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\runtime.exe" exit >> build\SudoStudio\start.bat
+
+          echo if not exist "%%APP%%\VSCodium.exe" echo VSCodium.exe missing >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\VSCodium.exe" pause >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\VSCodium.exe" exit >> build\SudoStudio\start.bat
 
           echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
           echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
