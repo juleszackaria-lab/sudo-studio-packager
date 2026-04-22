@@ -10,9 +10,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          repository: juleszackeria-lab/sudo-studio
-          token: ${{ }}
 
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
@@ -40,11 +37,15 @@ jobs:
 
       - name: Download VSCodium
         shell: powershell
-        run: Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip -OutFile vscodium.zip
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip" `
+            -OutFile "vscodium.zip"
 
       - name: Extract VSCodium
         shell: powershell
-        run: Expand-Archive vscodium.zip build\SudoStudio\app -Force
+        run: |
+          Expand-Archive -Path "vscodium.zip" -DestinationPath "build\SudoStudio\app" -Force
 
       - name: Copy backend and runtime
         shell: cmd
@@ -64,43 +65,54 @@ jobs:
           )
 
       - name: Create start.bat
-        shell: cmd
+        shell: powershell
         run: |
-          echo @echo off > build\SudoStudio\start.bat
-          echo cd /d "%%~dp0" >> build\SudoStudio\start.bat
-          echo echo Starting Sudo Studio... >> build\SudoStudio\start.bat
-          echo set APP=%%cd%%\app >> build\SudoStudio\start.bat
-          echo echo Checking required files... >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\backend.exe" (echo backend.exe missing & pause & exit) >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\runtime.exe" (echo runtime.exe missing & pause & exit) >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit) >> build\SudoStudio\start.bat
-          echo echo Launching backend... >> build\SudoStudio\start.bat
-          echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-          echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
-          echo echo Launching runtime... >> build\SudoStudio\start.bat
-          echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
-          echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
-          echo echo Launching VSCodium... >> build\SudoStudio\start.bat
-          echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
-          echo exit >> build\SudoStudio\start.bat
+          $bat = @'
+          @echo off
+          cd /d "%~dp0"
+          echo Starting Sudo Studio...
+          set APP=%~dp0app
+
+          echo Checking required files...
+          if not exist "%APP%\backend.exe" (echo backend.exe missing & pause & exit)
+          if not exist "%APP%\runtime.exe" (echo runtime.exe missing & pause & exit)
+          if not exist "%APP%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit)
+
+          echo Launching backend...
+          start "" "%APP%\backend.exe"
+          timeout /t 2 >nul
+
+          echo Launching runtime...
+          start "" "%APP%\runtime.exe"
+          timeout /t 3 >nul
+
+          echo Launching VSCodium...
+          start "" "%APP%\VSCodium.exe" --extensions-dir "%APP%\extensions"
+          exit
+          '@
+          $bat | Out-File -FilePath "build\SudoStudio\start.bat" -Encoding ascii
 
       - name: Install Inno Setup
         run: choco install innosetup -y
 
-      - name: Create installer
-        shell: cmd
+      - name: Create installer script
+        shell: powershell
         run: |
-          echo [Setup] > installer.iss
-          echo AppName=SudoStudio >> installer.iss
-          echo AppVersion=1.0 >> installer.iss
-          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
-          echo OutputDir=Output >> installer.iss
-          echo OutputBaseFilename=SudoStudio >> installer.iss
-          if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
-          echo [Files] >> installer.iss
-          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
-          echo [Icons] >> installer.iss
-          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
+          $iss = @'
+          [Setup]
+          AppName=SudoStudio
+          AppVersion=1.0
+          DefaultDirName={autopf}\SudoStudio
+          OutputDir=Output
+          OutputBaseFilename=SudoStudio
+
+          [Files]
+          Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs
+
+          [Icons]
+          Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"
+          '@
+          $iss | Out-File -FilePath "installer.iss" -Encoding ascii
 
       - name: Build installer
         run: iscc installer.iss
