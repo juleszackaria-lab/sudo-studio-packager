@@ -11,9 +11,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 🔥 CLONE DU REPO SOURCE (backend + extension)
+      # 🔐 Clone repo source (privé compatible)
       - name: Clone source repo
-        run: git clone https://github.com/juleszackaria-lab/sudo-studio.git source
+        run: git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/juleszackaria-lab/sudo-studio.git source
 
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
@@ -54,14 +54,14 @@ jobs:
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
-      # ✅ COPIE EXTENSION DEPUIS LE REPO CLONÉ
+      # 🔥 Copier extension depuis repo cloné
       - name: Copy Sudo AI Extension
         shell: cmd
         run: |
           if exist source\sudo-ai-extension (
             xcopy source\sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
           ) else (
-            echo ERROR: sudo-ai-extension not found in source repo
+            echo ERROR: sudo-ai-extension not found
             dir source
             exit /b 1
           )
