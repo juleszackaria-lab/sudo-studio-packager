@@ -10,11 +10,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          repository: juleszackeria-lab/sudo-studio
+          token: ${{ }}
 
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackaria-lab/sudo-studio
+          repo: juleszackeria-lab/sudo-studio
           name: backend-exe
           path: build/backend
           run_id: 24709608974
@@ -22,7 +25,7 @@ jobs:
       - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackaria-lab/sudo-studio
+          repo: juleszackeria-lab/sudo-studio
           name: runtime-exe
           path: build/runtime
           run_id: 23684715163
@@ -65,29 +68,20 @@ jobs:
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo cd /d "%%~dp0" >> build\SudoStudio\start.bat
-
           echo echo Starting Sudo Studio... >> build\SudoStudio\start.bat
           echo set APP=%%cd%%\app >> build\SudoStudio\start.bat
-
           echo echo Checking required files... >> build\SudoStudio\start.bat
-
           echo if not exist "%%APP%%\backend.exe" (echo backend.exe missing & pause & exit) >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\runtime.exe" (echo runtime.exe missing & pause & exit) >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit) >> build\SudoStudio\start.bat
-
           echo echo Launching backend... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-
           echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
-
           echo echo Launching runtime... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
-
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
-
           echo echo Launching VSCodium... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
-
           echo exit >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
@@ -102,12 +96,9 @@ jobs:
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
           echo OutputBaseFilename=SudoStudio >> installer.iss
-
           if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
-
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
-
           echo [Icons] >> installer.iss
           echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
 
