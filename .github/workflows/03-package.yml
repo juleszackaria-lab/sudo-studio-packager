@@ -14,26 +14,18 @@ jobs:
       - name: Download backend
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackeria-lab/sudo-studio
+          repo: juleszackaria-lab/sudo-studio
           name: backend-exe
           path: build/backend
           run_id: 24709608974
-          github_token: ${{ secrets.GH_TOKEN }}
 
       - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackeria-lab/sudo-studio
+          repo: juleszackaria-lab/sudo-studio
           name: runtime-exe
           path: build/runtime
           run_id: 23684715163
-          github_token: ${{ secrets.GH_TOKEN }}
-
-      - name: Clone sudo-ai-extension from sudo-studio
-        shell: cmd
-        run: |
-          git clone https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/juleszackeria-lab/sudo-studio.git sudo-studio-tmp
-          xcopy sudo-studio-tmp\sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
 
       - name: Prepare folders
         shell: cmd
@@ -58,25 +50,44 @@ jobs:
           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
           if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
 
+      - name: Copy Sudo AI Extension
+        shell: cmd
+        run: |
+          if exist sudo-ai-extension (
+            xcopy sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
+          ) else (
+            echo ERROR: sudo-ai-extension folder missing
+            exit /b 1
+          )
+
       - name: Create start.bat
         shell: cmd
         run: |
           echo @echo off > build\SudoStudio\start.bat
           echo cd /d "%%~dp0" >> build\SudoStudio\start.bat
+
           echo echo Starting Sudo Studio... >> build\SudoStudio\start.bat
           echo set APP=%%cd%%\app >> build\SudoStudio\start.bat
+
           echo echo Checking required files... >> build\SudoStudio\start.bat
+
           echo if not exist "%%APP%%\backend.exe" (echo backend.exe missing & pause & exit) >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\runtime.exe" (echo runtime.exe missing & pause & exit) >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\VSCodium.exe" (echo VSCodium.exe missing & pause & exit) >> build\SudoStudio\start.bat
+
           echo echo Launching backend... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
+
           echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
+
           echo echo Launching runtime... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
+
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
+
           echo echo Launching VSCodium... >> build\SudoStudio\start.bat
           echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
+
           echo exit >> build\SudoStudio\start.bat
 
       - name: Install Inno Setup
@@ -91,9 +102,12 @@ jobs:
           echo DefaultDirName={autopf}\SudoStudio >> installer.iss
           echo OutputDir=Output >> installer.iss
           echo OutputBaseFilename=SudoStudio >> installer.iss
+
           if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
+
           echo [Files] >> installer.iss
           echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
+
           echo [Icons] >> installer.iss
           echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
 
