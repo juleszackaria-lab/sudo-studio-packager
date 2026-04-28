@@ -1,3 +1,69 @@
+name: SudoStudio Stable Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone source repo
+        run: git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/juleszackaria-lab/sudo-studio.git source
+
+      - name: Download backend
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackaria-lab/sudo-studio
+          name: backend-exe
+          path: build/backend
+          run_id: 24709608974
+
+      - name: Download runtime
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackaria-lab/sudo-studio
+          name: runtime-exe
+          path: build/runtime
+          run_id: 23684715163
+
+      - name: Prepare folders
+        shell: cmd
+        run: |
+          if not exist build mkdir build
+          if not exist build\SudoStudio mkdir build\SudoStudio
+          if not exist build\SudoStudio\app mkdir build\SudoStudio\app
+          if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
+
+      - name: Download VSCodium
+        shell: powershell
+        run: Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip -OutFile vscodium.zip
+
+      - name: Extract VSCodium
+        shell: powershell
+        run: Expand-Archive vscodium.zip build\SudoStudio\app -Force
+
+      - name: Copy backend and runtime
+        shell: cmd
+        run: |
+          copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
+          copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
+          if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
+
+      - name: Copy Sudo AI Extension
+        shell: cmd
+        run: |
+          if exist source\sudo-ai-extension (
+            xcopy source\sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
+          ) else (
+            echo ERROR: sudo-ai-extension not found
+            dir source
+            exit /b 1
+          )
+
       - name: Create start.bat
         shell: cmd
         run: |
@@ -11,15 +77,15 @@
 
           echo if not exist "%%APP%%\backend.exe" echo backend.exe missing >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\backend.exe" pause >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\backend.exe" exit /b >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\backend.exe" exit /b 1 >> build\SudoStudio\start.bat
 
           echo if not exist "%%APP%%\runtime.exe" echo runtime.exe missing >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\runtime.exe" pause >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\runtime.exe" exit /b >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\runtime.exe" exit /b 1 >> build\SudoStudio\start.bat
 
           echo if not exist "%%APP%%\VSCodium.exe" echo VSCodium.exe missing >> build\SudoStudio\start.bat
           echo if not exist "%%APP%%\VSCodium.exe" pause >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\VSCodium.exe" exit /b >> build\SudoStudio\start.bat
+          echo if not exist "%%APP%%\VSCodium.exe" exit /b 1 >> build\SudoStudio\start.bat
 
           echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
           echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
@@ -28,3 +94,34 @@
           echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
 
           echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
+          echo exit /b 0 >> build\SudoStudio\start.bat
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Create installer
+        shell: cmd
+        run: |
+          echo [Setup] > installer.iss
+          echo AppName=SudoStudio >> installer.iss
+          echo AppVersion=1.0 >> installer.iss
+          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
+          echo OutputDir=Output >> installer.iss
+          echo OutputBaseFilename=SudoStudio >> installer.iss
+
+          if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
+
+          echo [Files] >> installer.iss
+          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
+
+          echo [Icons] >> installer.iss
+          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
+
+      - name: Build installer
+        run: iscc installer.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: Output\*.exe
