@@ -67,34 +67,26 @@ jobs:
       - name: Create start.bat
         shell: cmd
         run: |
-          echo @echo off > build\SudoStudio\start.bat
-          echo setlocal >> build\SudoStudio\start.bat
-          echo set ROOT=%%~dp0 >> build\SudoStudio\start.bat
-          echo set APP=%%ROOT%%app >> build\SudoStudio\start.bat
+          > build\SudoStudio\start.bat echo @echo off
+          >> build\SudoStudio\start.bat echo setlocal
+          >> build\SudoStudio\start.bat echo set "ROOT=%%~dp0"
+          >> build\SudoStudio\start.bat echo set "APP=%%ROOT%%app"
 
-          echo echo ROOT=%%ROOT%% >> build\SudoStudio\start.bat
-          echo echo APP=%%APP%% >> build\SudoStudio\start.bat
+          >> build\SudoStudio\start.bat echo echo ROOT=%%ROOT%%
+          >> build\SudoStudio\start.bat echo echo APP=%%APP%%
 
-          echo if not exist "%%APP%%\backend.exe" echo backend.exe missing >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\backend.exe" pause >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\backend.exe" exit /b 1 >> build\SudoStudio\start.bat
+          >> build\SudoStudio\start.bat echo if not exist "%%APP%%\backend.exe" echo backend.exe missing ^& pause ^& exit /b 1
+          >> build\SudoStudio\start.bat echo if not exist "%%APP%%\runtime.exe" echo runtime.exe missing ^& pause ^& exit /b 1
+          >> build\SudoStudio\start.bat echo if not exist "%%APP%%\VSCodium.exe" echo VSCodium.exe missing ^& pause ^& exit /b 1
 
-          echo if not exist "%%APP%%\runtime.exe" echo runtime.exe missing >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\runtime.exe" pause >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\runtime.exe" exit /b 1 >> build\SudoStudio\start.bat
+          >> build\SudoStudio\start.bat echo start "" "%%APP%%\backend.exe"
+          >> build\SudoStudio\start.bat echo timeout /t 2 ^>nul
 
-          echo if not exist "%%APP%%\VSCodium.exe" echo VSCodium.exe missing >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\VSCodium.exe" pause >> build\SudoStudio\start.bat
-          echo if not exist "%%APP%%\VSCodium.exe" exit /b 1 >> build\SudoStudio\start.bat
+          >> build\SudoStudio\start.bat echo start "" "%%APP%%\runtime.exe"
+          >> build\SudoStudio\start.bat echo timeout /t 3 ^>nul
 
-          echo start "" "%%APP%%\backend.exe" >> build\SudoStudio\start.bat
-          echo timeout /t 2 ^>nul >> build\SudoStudio\start.bat
-
-          echo start "" "%%APP%%\runtime.exe" >> build\SudoStudio\start.bat
-          echo timeout /t 3 ^>nul >> build\SudoStudio\start.bat
-
-          echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions" >> build\SudoStudio\start.bat
-          echo exit /b 0 >> build\SudoStudio\start.bat
+          >> build\SudoStudio\start.bat echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions"
+          >> build\SudoStudio\start.bat echo exit /b 0
 
       - name: Install Inno Setup
         run: choco install innosetup -y
