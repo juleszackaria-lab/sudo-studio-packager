@@ -20,7 +20,7 @@ jobs:
           repo: juleszackaria-lab/sudo-studio
           name: backend-exe
           path: build/backend
-          run_id: 24709608974
+          run_id: 25615887613
 
       - name: Download runtime
         uses: dawidd6/action-download-artifact@v5
