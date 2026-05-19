@@ -28,7 +28,7 @@ jobs:
           repo: juleszackaria-lab/sudo-studio
           name: runtime-exe
           path: build/runtime
-          run_id: 25642179097
+          run_id: 26088409931
 
       - name: Prepare folders
         shell: cmd
