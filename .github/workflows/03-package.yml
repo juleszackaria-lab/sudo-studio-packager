@@ -2,118 +2,536 @@ name: SudoStudio Stable Build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
 
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 90
 
     steps:
+      # ── 1. Checkout this repo ────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Clone source repo
-        run: git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/juleszackaria-lab/sudo-studio.git source
-
-      - name: Download backend
+      # ── 2. Download pre-built backend.exe artifact ───────────────────────────
+      #   if_no_artifact_found: warn  = download step succeeds even if no artifact
+      #   We validate the actual binary in step 9 below.
+      - name: Download backend.exe (latest)
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackaria-lab/sudo-studio
+          repo: juleszackeria-lab/Sudo-studio
           name: backend-exe
           path: build/backend
-          run_id: 26294621204
+          branch: main
+          workflow_conclusion: success
+          if_no_artifact_found: warn
 
-      - name: Download runtime
+      # ── 3. Download pre-built runtime.exe artifact ───────────────────────────
+      - name: Download runtime.exe (latest)
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackaria-lab/sudo-studio
+          repo: juleszackeria-lab/Sudo-studio
           name: runtime-exe
           path: build/runtime
-          run_id: 26294605515
+          branch: main
+          workflow_conclusion: success
+          if_no_artifact_found: warn
 
-      - name: Prepare folders
+      # ── 4. VALIDATE artifact binaries (fail-fast if placeholders) ────────────
+      #   dawidd6 with if_no_artifact_found:warn creates a tiny text file if
+      #   the artifact is missing.  We refuse to ship that as an EXE.
+      - name: Validate artifact binaries
+        shell: powershell
+        run: |
+          $backendPath = "build\backend\backend.exe"
+          $runtimePath = "build\runtime\server.exe"
+
+          $MIN_SIZE_BYTES = 500000   # 500 KB minimum — real EXEs are 10-200 MB
+
+          function Assert-Binary($p, $name) {
+            if (-not (Test-Path $p)) {
+              Write-Error "$name NOT FOUND at $p. Run workflow 01 / 02 first."
+              exit 1
+            }
+            $size = (Get-Item $p).Length
+            if ($size -lt $MIN_SIZE_BYTES) {
+              Write-Error "$name is only $size bytes — looks like a placeholder. Run workflow 01 / 02 first."
+              exit 1
+            }
+            Write-Host "OK: $name ($([math]::Round($size/1MB,1)) MB)"
+          }
+
+          Assert-Binary $backendPath  "backend.exe"
+          Assert-Binary $runtimePath  "runtime.exe (server.exe)"
+
+      # ── 5. Install Node.js for extension packaging ───────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 6. Install extension dependencies ────────────────────────────────────
+      - name: Install extension node_modules
+        shell: cmd
+        run: |
+          cd sudo-ai-extension
+          npm install --production
+          echo Extension node_modules installed.
+          dir node_modules\axios
+          dir node_modules\marked
+
+      # ── 7. Prepare build folder structure ────────────────────────────────────
+      - name: Prepare build folders
         shell: cmd
         run: |
           if not exist build mkdir build
           if not exist build\SudoStudio mkdir build\SudoStudio
           if not exist build\SudoStudio\app mkdir build\SudoStudio\app
           if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
+          if not exist build\SudoStudio\app\data mkdir build\SudoStudio\app\data
+          if not exist Output mkdir Output
+          echo Folders created.
+          echo   - build\SudoStudio\app\data created (VSCodium portable isolation)
 
-      - name: Download VSCodium
+      # ── 8. Download VSCodium portable (Windows x64) ──────────────────────────
+      #   IMPORTANT: update the version number here when VSCodium releases a new version
+      - name: Download VSCodium portable
         shell: powershell
-        run: Invoke-WebRequest https://github.com/VSCodium/vscodium/releases/download/1.97.2.25045/VSCodium-win32-x64-1.97.2.25045.zip -OutFile vscodium.zip
+        run: |
+          $ver = "1.97.2.25045"    # <-- UPDATE THIS when VSCodium releases a new version
+          $url = "https://github.com/VSCodium/vscodium/releases/download/$ver/VSCodium-win32-x64-$ver.zip"
+          Write-Host "Downloading VSCodium $ver..."
+          Invoke-WebRequest $url -OutFile vscodium.zip -TimeoutSec 300
+          Write-Host "VSCodium downloaded: $([math]::Round((Get-Item vscodium.zip).Length/1MB,1)) MB"
 
+      # ── 9. Extract VSCodium into app folder ──────────────────────────────────
       - name: Extract VSCodium
         shell: powershell
-        run: Expand-Archive vscodium.zip build\SudoStudio\app -Force
+        run: |
+          Expand-Archive vscodium.zip build\SudoStudio\app -Force
+          Write-Host "VSCodium extracted."
+          Get-ChildItem build\SudoStudio\app | Select-Object Name, Length
 
-      - name: Copy backend and runtime
+          # VSCodium portable mode: the data\ folder next to VSCodium.exe
+          # triggers portable mode in VSCodium 1.85+.  We created it in step 7.
+          # Verify VSCodium.exe is present
+          if (-not (Test-Path "build\SudoStudio\app\VSCodium.exe")) {
+            Write-Error "VSCodium.exe not found after extraction!"
+            exit 1
+          }
+          Write-Host "VSCodium.exe confirmed."
+
+      # ── 10. Copy backend.exe and runtime.exe ─────────────────────────────────
+      - name: Copy executables
         shell: cmd
         run: |
           copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
-          copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
-          if exist logo.ico copy logo.ico build\SudoStudio\logo.ico /Y
+          echo backend.exe copied.
 
-      - name: Copy Sudo AI Extension
-        shell: cmd
-        run: |
-          if exist source\sudo-ai-extension (
-            xcopy source\sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y
+          :: runtime workflow uploads as server.exe (pyinstaller --name server)
+          if exist build\runtime\server.exe (
+            copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
+            echo runtime.exe copied from server.exe.
+          ) else if exist build\runtime\runtime.exe (
+            copy build\runtime\runtime.exe build\SudoStudio\app\runtime.exe /Y
+            echo runtime.exe copied.
           ) else (
-            echo ERROR: sudo-ai-extension not found
-            dir source
+            echo ERROR: Neither server.exe nor runtime.exe found in build\runtime\
+            dir build\runtime
             exit /b 1
           )
 
+          if exist resources\icon.png (
+            copy resources\icon.png build\SudoStudio\logo.ico /Y
+            echo icon copied.
+          ) else (
+            echo INFO: No icon.png found - installer will use default icon.
+          )
+
+      # ── 11. Copy Sudo AI Extension (with node_modules) ───────────────────────
+      - name: Copy extension with node_modules
+        shell: cmd
+        run: |
+          if exist sudo-ai-extension (
+            xcopy sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y /Q
+            echo Extension copied.
+            dir build\SudoStudio\app\extensions\sudo-ai
+          ) else (
+            echo ERROR: sudo-ai-extension directory not found
+            dir .
+            exit /b 1
+          )
+
+      # ── 12. Create start.bat launcher ────────────────────────────────────────
+      #   Uses port-polling instead of blind timeouts.
+      #   --user-data-dir ensures VSCodium portable isolation.
       - name: Create start.bat
-        shell: cmd
+        shell: powershell
         run: |
-          > build\SudoStudio\start.bat echo @echo off
-          >> build\SudoStudio\start.bat echo setlocal
-          >> build\SudoStudio\start.bat echo set "ROOT=%%~dp0"
-          >> build\SudoStudio\start.bat echo set "APP=%%ROOT%%app"
+          $lines = @(
+            '@echo off',
+            'setlocal enabledelayedexpansion',
+            '',
+            ':: ============================================================',
+            '::  SUDO STUDIO - Main Launcher v2.1',
+            '::  Starts backend -> runtime -> VSCodium in correct order',
+            '::  Includes port-polling health checks (no blind timeouts)',
+            ':: ============================================================',
+            '',
+            'set "ROOT=%~dp0"',
+            'set "APP=%ROOT%app"',
+            '',
+            'echo.',
+            'echo  ============================================================',
+            'echo   SUDO STUDIO - Starting all services...',
+            'echo  ============================================================',
+            'echo.',
+            'echo  Root    : %ROOT%',
+            'echo  App dir : %APP%',
+            'echo.',
+            '',
+            'if not exist "%APP%\backend.exe" (',
+            '    echo  [ERROR] backend.exe not found. Please reinstall.',
+            '    pause',
+            '    exit /b 1',
+            ')',
+            '',
+            'if not exist "%APP%\runtime.exe" (',
+            '    echo  [ERROR] runtime.exe not found. Please reinstall.',
+            '    pause',
+            '    exit /b 1',
+            ')',
+            '',
+            'if not exist "%APP%\VSCodium.exe" (',
+            '    echo  [ERROR] VSCodium.exe not found. Please reinstall.',
+            '    pause',
+            '    exit /b 1',
+            ')',
+            '',
+            'if not exist "%APP%\extensions\sudo-ai" (',
+            '    echo  [WARNING] Extension folder missing. Extension may not load.',
+            ')',
+            '',
+            ':: Create VSCodium data folder for portable isolation',
+            'if not exist "%APP%\data" (',
+            '    mkdir "%APP%\data"',
+            '    echo  [INFO] Created VSCodium data folder for portable mode.',
+            ')',
+            '',
+            ':: [1/3] Start backend (port 5000)',
+            'echo  [1/3] Starting Backend (port 5000)...',
+            'start "" "%APP%\backend.exe"',
+            '',
+            'set BACKEND_READY=0',
+            'for /l %%i in (1,1,30) do (',
+            '    if !BACKEND_READY!==0 (',
+            '        timeout /t 1 /nobreak >nul',
+            '        curl -s -o nul -w "%%{http_code}" http://localhost:5000/api/system/health 2>nul | findstr "200 401 403" >nul 2>&1',
+            '        if not errorlevel 1 (',
+            '            set BACKEND_READY=1',
+            '            echo        Backend ready after %%i second(s^).',
+            '        )',
+            '    )',
+            ')',
+            'if !BACKEND_READY!==0 (',
+            '    echo  [WARNING] Backend did not respond within 30s. Continuing anyway.',
+            ')',
+            '',
+            ':: [2/3] Start AI runtime (port 6000)',
+            'echo  [2/3] Starting AI Runtime (port 6000)...',
+            'echo         Model auto-downloads ~600MB on first run.',
+            'start "" "%APP%\runtime.exe"',
+            '',
+            'set RUNTIME_READY=0',
+            'for /l %%i in (1,1,30) do (',
+            '    if !RUNTIME_READY!==0 (',
+            '        timeout /t 1 /nobreak >nul',
+            '        curl -s -o nul -w "%%{http_code}" http://localhost:6000/health 2>nul | findstr "200" >nul 2>&1',
+            '        if not errorlevel 1 (',
+            '            set RUNTIME_READY=1',
+            '            echo        Runtime ready after %%i second(s^).',
+            '        )',
+            '    )',
+            ')',
+            'if !RUNTIME_READY!==0 (',
+            '    echo  [WARNING] Runtime did not respond within 30s. AI model may still be loading.',
+            ')',
+            '',
+            ':: [3/3] Launch VSCodium',
+            'echo  [3/3] Launching VSCodium with Sudo AI extension...',
+            'start "" "%APP%\VSCodium.exe" --extensions-dir "%APP%\extensions" --user-data-dir "%APP%\data"',
+            'echo        VSCodium launched.',
+            '',
+            'echo.',
+            'echo  ============================================================',
+            'echo   All services started!',
+            'echo   - Backend   : http://localhost:5000',
+            'echo   - AI Runtime: http://localhost:6000  (model loading...)',
+            'echo   - VSCodium  : Opening now with Sudo AI extension',
+            'echo  ============================================================',
+            'echo.',
+            'echo  Check Runtime panel in VSCodium for AI model progress.',
+            'echo.',
+            'timeout /t 5 /nobreak >nul',
+            'exit /b 0'
+          )
+          $lines | Out-File -FilePath "build\SudoStudio\start.bat" -Encoding ASCII
+          Write-Host "start.bat created."
+          Write-Host "--- Content preview (first 10 lines) ---"
+          Get-Content "build\SudoStudio\start.bat" | Select-Object -First 10
 
-          >> build\SudoStudio\start.bat echo echo ROOT=%%ROOT%%
-          >> build\SudoStudio\start.bat echo echo APP=%%APP%%
+      # ── 13. Create README.txt ─────────────────────────────────────────────────
+      - name: Create README.txt
+        shell: powershell
+        run: |
+          $lines = @(
+            'SUDO STUDIO',
+            '===========',
+            '',
+            'How to start:',
+            '1. Double-click start.bat',
+            '2. Wait for services to launch (up to 30 seconds each)',
+            '3. VSCodium opens automatically with the Sudo AI extension',
+            '',
+            'Services:',
+            '- backend.exe  : API server on port 5000',
+            '- runtime.exe  : AI inference server on port 6000',
+            '                 (downloads TinyLlama model ~600MB on first run)',
+            '- VSCodium.exe : Code editor with Sudo AI extension',
+            '',
+            'Requirements:',
+            '- Windows 10 / 11',
+            '- Internet connection (first run only, for model download)',
+            '- ~1.5 GB free disk space (for model cache)',
+            '- ~4 GB RAM recommended',
+            '',
+            'The AI model (TinyLlama 1.1B) is downloaded automatically on first run.',
+            'Subsequent runs load from cache and start faster.',
+            '',
+            'Data & settings are stored in: app\data\ (portable mode).',
+            'AI model cache is stored in: %USERPROFILE%\.sudo_studio\models\'
+          )
+          $lines | Out-File -FilePath "build\SudoStudio\README.txt" -Encoding UTF8
+          Write-Host "README.txt created."
 
-          >> build\SudoStudio\start.bat echo if not exist "%%APP%%\backend.exe" echo backend.exe missing ^& pause ^& exit /b 1
-          >> build\SudoStudio\start.bat echo if not exist "%%APP%%\runtime.exe" echo runtime.exe missing ^& pause ^& exit /b 1
-          >> build\SudoStudio\start.bat echo if not exist "%%APP%%\VSCodium.exe" echo VSCodium.exe missing ^& pause ^& exit /b 1
-
-          >> build\SudoStudio\start.bat echo start "" "%%APP%%\backend.exe"
-          >> build\SudoStudio\start.bat echo timeout /t 2 ^>nul
-
-          >> build\SudoStudio\start.bat echo start "" "%%APP%%\runtime.exe"
-          >> build\SudoStudio\start.bat echo timeout /t 3 ^>nul
-
-          >> build\SudoStudio\start.bat echo start "" "%%APP%%\VSCodium.exe" --extensions-dir "%%APP%%\extensions"
-          >> build\SudoStudio\start.bat echo exit /b 0
-
+      # ── 14. Install Inno Setup ────────────────────────────────────────────────
       - name: Install Inno Setup
-        run: choco install innosetup -y
+        run: choco install innosetup -y --no-progress
 
-      - name: Create installer
+      # ── 15. Create Inno Setup script ─────────────────────────────────────────
+      - name: Create installer script
+        shell: powershell
+        run: |
+          $hasIcon = Test-Path "build\SudoStudio\logo.ico"
+          $iconLine = if ($hasIcon) { 'SetupIconFile=build\SudoStudio\logo.ico' } else { '' }
+
+          $lines = @(
+            '[Setup]',
+            'AppName=SudoStudio',
+            'AppVersion=1.0.0',
+            'AppPublisher=SudoStudio',
+            'AppPublisherURL=https://github.com/juleszackeria-lab/Sudo-studio',
+            'DefaultDirName={autopf}\SudoStudio',
+            'DefaultGroupName=SudoStudio',
+            'OutputDir=Output',
+            'OutputBaseFilename=SudoStudio-Setup',
+            'Compression=lzma',
+            'SolidCompression=yes',
+            'WizardStyle=modern',
+            'DisableProgramGroupPage=yes',
+            'PrivilegesRequired=lowest'
+          )
+          if ($iconLine) { $lines += $iconLine }
+          $lines += @(
+            '',
+            '[Languages]',
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            '',
+            '[Tasks]',
+            'Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"',
+            '',
+            '[Files]',
+            'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs',
+            '',
+            '[Icons]',
+            'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"',
+            'Name: "{commondesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon',
+            '',
+            '[Run]',
+            'Filename: "{app}\start.bat"; Description: "Launch SudoStudio now"; Flags: postinstall nowait skipifsilent'
+          )
+          $lines | Out-File -FilePath "installer.iss" -Encoding UTF8
+          Write-Host "installer.iss created."
+          Get-Content "installer.iss"
+
+      # ── 16. Build installer ───────────────────────────────────────────────────
+      - name: Build installer with Inno Setup
         shell: cmd
         run: |
-          echo [Setup] > installer.iss
-          echo AppName=SudoStudio >> installer.iss
-          echo AppVersion=1.0 >> installer.iss
-          echo DefaultDirName={autopf}\SudoStudio >> installer.iss
-          echo OutputDir=Output >> installer.iss
-          echo OutputBaseFilename=SudoStudio >> installer.iss
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          echo Installer built.
+          dir Output
 
-          if exist build\SudoStudio\logo.ico echo SetupIconFile=build\SudoStudio\logo.ico >> installer.iss
+      # ── 17. Verify installer ──────────────────────────────────────────────────
+      - name: Verify installer binary
+        shell: powershell
+        run: |
+          $setup = Get-ChildItem "Output\*.exe" | Select-Object -First 1
+          if (-not $setup) {
+            Write-Error "Installer EXE not found in Output\"
+            exit 1
+          }
+          $sizeMB = [math]::Round($setup.Length / 1MB, 1)
+          Write-Host "Installer: $($setup.Name) — $sizeMB MB"
+          if ($setup.Length -lt 5MB) {
+            Write-Warning "Installer looks too small ($sizeMB MB). May be incomplete."
+          }
 
-          echo [Files] >> installer.iss
-          echo Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs >> installer.iss
-
-          echo [Icons] >> installer.iss
-          echo Name: "{group}\SudoStudio"; Filename: "{app}\start.bat" >> installer.iss
-
-      - name: Build installer
-        run: iscc installer.iss
-
-      - name: Upload installer
+      # ── 18. Upload installer artifact ────────────────────────────────────────
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: installer
-          path: Output\*.exe
+          name: SudoStudio-Installer
+          path: Output\SudoStudio-Setup.exe
+          retention-days: 30
+
+      # ── 19. Create portable zip ───────────────────────────────────────────────
+      - name: Create portable zip
+        shell: powershell
+        run: |
+          Compress-Archive -Path "build\SudoStudio\*" -DestinationPath "Output\SudoStudio-Portable.zip" -Force
+          $sizeMB = [math]::Round((Get-Item "Output\SudoStudio-Portable.zip").Length / 1MB, 1)
+          Write-Host "Portable zip created: $sizeMB MB"
+
+      # ── 20. Upload portable zip artifact ─────────────────────────────────────
+      - name: Upload portable zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Portable
+          path: Output\SudoStudio-Portable.zip
+          retention-days: 30
+@echo off
+setlocal enabledelayedexpansion
+
+:: ============================================================
+::  SUDO STUDIO - Main Launcher v2.1
+::  Starts backend → runtime → VSCodium in correct order
+::  Includes port-polling health checks (no blind timeouts)
+:: ============================================================
+
+set "ROOT=%~dp0"
+set "APP=%ROOT%app"
+
+echo.
+echo  ============================================================
+echo   SUDO STUDIO - Starting all services...
+echo  ============================================================
+echo.
+echo  Root    : %ROOT%
+echo  App dir : %APP%
+echo.
+
+:: ── Verify required files exist ─────────────────────────────
+if not exist "%APP%\backend.exe" (
+    echo  [ERROR] backend.exe not found in %APP%
+    echo  Please re-run the installer.
+    pause
+    exit /b 1
+)
+
+if not exist "%APP%\runtime.exe" (
+    echo  [ERROR] runtime.exe not found in %APP%
+    echo  Please re-run the installer.
+    pause
+    exit /b 1
+)
+
+if not exist "%APP%\VSCodium.exe" (
+    echo  [ERROR] VSCodium.exe not found in %APP%
+    echo  Please re-run the installer.
+    pause
+    exit /b 1
+)
+
+if not exist "%APP%\extensions\sudo-ai" (
+    echo  [WARNING] Extension folder missing: %APP%\extensions\sudo-ai
+    echo  The extension may not load. Continuing...
+)
+
+:: ── Create VSCodium data/ folder for portable isolation ──────
+:: This prevents VSCodium from writing to %APPDATA%\VSCodium
+:: and ensures complete isolation from any other VSCodium install
+if not exist "%APP%\data" (
+    mkdir "%APP%\data"
+    echo  [INFO] Created VSCodium data folder for portable mode.
+)
+
+:: ── Step 1: Start backend (port 5000) ────────────────────────
+echo  [1/3] Starting Backend (port 5000)...
+start "" "%APP%\backend.exe"
+
+:: Poll port 5000 — up to 30 seconds
+set BACKEND_READY=0
+for /l %%i in (1,1,30) do (
+    if !BACKEND_READY!==0 (
+        timeout /t 1 /nobreak >nul
+        curl -s -o nul -w "%%{http_code}" http://localhost:5000/api/system/health 2>nul | findstr "200 401 403" >nul 2>&1
+        if not errorlevel 1 (
+            set BACKEND_READY=1
+            echo        Backend ready after %%i second(s^).
+        )
+    )
+)
+if !BACKEND_READY!==0 (
+    echo  [WARNING] Backend did not respond on port 5000 within 30s.
+    echo            Continuing anyway - it may still be starting up.
+)
+
+:: ── Step 2: Start AI runtime (port 6000) ─────────────────────
+echo  [2/3] Starting AI Runtime (port 6000)...
+echo        (TinyLlama model will auto-download ~600MB on first run)
+start "" "%APP%\runtime.exe"
+
+:: Poll port 6000 — up to 30 seconds
+set RUNTIME_READY=0
+for /l %%i in (1,1,30) do (
+    if !RUNTIME_READY!==0 (
+        timeout /t 1 /nobreak >nul
+        curl -s -o nul -w "%%{http_code}" http://localhost:6000/health 2>nul | findstr "200" >nul 2>&1
+        if not errorlevel 1 (
+            set RUNTIME_READY=1
+            echo        Runtime ready after %%i second(s^).
+        )
+    )
+)
+if !RUNTIME_READY!==0 (
+    echo  [WARNING] Runtime did not respond on port 6000 within 30s.
+    echo            Continuing - it may still be loading the AI model.
+)
+
+:: ── Step 3: Launch VSCodium with bundled extension ───────────
+echo  [3/3] Launching VSCodium with Sudo AI extension...
+:: --extensions-dir : loads ONLY the bundled sudo-ai extension
+:: --user-data-dir  : stores VSCodium settings inside app\data\
+::                    (portable mode - no conflict with system VSCodium)
+start "" "%APP%\VSCodium.exe" --extensions-dir "%APP%\extensions" --user-data-dir "%APP%\data"
+echo        VSCodium launched.
+
+echo.
+echo  ============================================================
+echo   All services started!
+echo   - Backend   : http://localhost:5000
+echo   - AI Runtime: http://localhost:6000  (model loading...)
+echo   - VSCodium  : Opening now with Sudo AI extension
+echo  ============================================================
+echo.
+echo  The AI model downloads automatically in the background.
+echo  Check the "Runtime Status" panel in VSCodium for progress.
+echo.
+echo  This window will close in 5 seconds.
+echo.
+timeout /t 5 /nobreak >nul
+exit /b 0
