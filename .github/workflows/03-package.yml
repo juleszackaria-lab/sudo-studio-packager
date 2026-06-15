@@ -9,8 +9,8 @@ on:
 env:
   # Colle ici les Run IDs des workflows qui ont produit les artefacts
   # (visible dans l'URL du run : .../actions/runs/<RUN_ID>)
-  BACKEND_RUN_ID: "27506310871"
-  RUNTIME_RUN_ID: "27506305689"
+  BACKEND_RUN_ID: "27548693779"
+  RUNTIME_RUN_ID: "27548710443"
 
 jobs:
   build:
@@ -27,7 +27,7 @@ jobs:
       - name: Download backend.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackeria-lab/Sudo-studio
+          repo: juleszackaria-lab/Sudo-studio
           run_id: ${{ env.BACKEND_RUN_ID }}
           name: backend-exe
           path: build/backend
@@ -38,7 +38,7 @@ jobs:
       - name: Download runtime.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackeria-lab/Sudo-studio
+          repo: juleszackaria-lab/Sudo-studio
           run_id: ${{ env.RUNTIME_RUN_ID }}
           name: runtime-exe
           path: build/runtime
@@ -337,7 +337,7 @@ jobs:
             'AppName=SudoStudio',
             'AppVersion=1.0.0',
             'AppPublisher=SudoStudio',
-            'AppPublisherURL=https://github.com/juleszackeria-lab/sudo-studio-packager',
+            'AppPublisherURL=https://github.com/juleszackaria-lab/sudo-studio-packager',
             'DefaultDirName={autopf}\SudoStudio',
             'DefaultGroupName=SudoStudio',
             'OutputDir=Output',
