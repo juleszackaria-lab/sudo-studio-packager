@@ -18,11 +18,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      # ── 1. Checkout this repo ────────────────────────────────────────────────
+      # -- 1. Checkout this repo ------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Download pre-built backend.exe artifact (by run ID) ──────────────
+      # -- 2. Download pre-built backend.exe artifact (by run ID) --------------
       #   Repo source : Sudo-studio (public, donc pas besoin de github_token).
       - name: Download backend.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
@@ -33,7 +33,7 @@ jobs:
           path: build/backend
           if_no_artifact_found: warn
 
-      # ── 3. Download pre-built runtime.exe artifact (by run ID) ──────────────
+      # -- 3. Download pre-built runtime.exe artifact (by run ID) --------------
       #   Repo source : Sudo-studio (public, donc pas besoin de github_token).
       - name: Download runtime.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
@@ -44,7 +44,7 @@ jobs:
           path: build/runtime
           if_no_artifact_found: warn
 
-      # ── 4. VALIDATE artifact binaries (fail-fast if placeholders) ────────────
+      # -- 4. VALIDATE artifact binaries (fail-fast if placeholders) ------------
       #   dawidd6 with if_no_artifact_found:warn creates a tiny text file if
       #   the artifact is missing.  We refuse to ship that as an EXE.
       - name: Validate artifact binaries
@@ -53,7 +53,7 @@ jobs:
           $backendPath = "build\backend\backend.exe"
           $runtimePath = "build\runtime\server.exe"
 
-          $MIN_SIZE_BYTES = 500000   # 500 KB minimum — real EXEs are 10-200 MB
+          $MIN_SIZE_BYTES = 500000   # 500 KB minimum -- real EXEs are 10-200 MB
 
           function Assert-Binary($p, $name) {
             if (-not (Test-Path $p)) {
@@ -62,7 +62,7 @@ jobs:
             }
             $size = (Get-Item $p).Length
             if ($size -lt $MIN_SIZE_BYTES) {
-              Write-Error "$name is only $size bytes — looks like a placeholder. Run workflow 01 / 02 first."
+              Write-Error "$name is only $size bytes -- looks like a placeholder. Run workflow 01 / 02 first."
               exit 1
             }
             Write-Host "OK: $name ($([math]::Round($size/1MB,1)) MB)"
@@ -71,13 +71,13 @@ jobs:
           Assert-Binary $backendPath  "backend.exe"
           Assert-Binary $runtimePath  "runtime.exe (server.exe)"
 
-      # ── 5. Install Node.js for extension packaging ───────────────────────────
+      # -- 5. Install Node.js for extension packaging ---------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # ── 6. Install extension dependencies ────────────────────────────────────
+      # -- 6. Install extension dependencies ------------------------------------
       - name: Install extension node_modules
         shell: cmd
         run: |
@@ -87,7 +87,7 @@ jobs:
           dir node_modules\axios
           dir node_modules\marked
 
-      # ── 7. Prepare build folder structure ────────────────────────────────────
+      # -- 7. Prepare build folder structure ------------------------------------
       - name: Prepare build folders
         shell: cmd
         run: |
@@ -100,7 +100,7 @@ jobs:
           echo Folders created.
           echo   - build\SudoStudio\app\data created (VSCodium portable isolation)
 
-      # ── 8. Download VSCodium portable (Windows x64) ──────────────────────────
+      # -- 8. Download VSCodium portable (Windows x64) --------------------------
       #   IMPORTANT: update the version number here when VSCodium releases a new version
       - name: Download VSCodium portable
         shell: powershell
@@ -111,7 +111,7 @@ jobs:
           Invoke-WebRequest $url -OutFile vscodium.zip -TimeoutSec 300
           Write-Host "VSCodium downloaded: $([math]::Round((Get-Item vscodium.zip).Length/1MB,1)) MB"
 
-      # ── 9. Extract VSCodium into app folder ──────────────────────────────────
+      # -- 9. Extract VSCodium into app folder ----------------------------------
       - name: Extract VSCodium
         shell: powershell
         run: |
@@ -128,7 +128,7 @@ jobs:
           }
           Write-Host "VSCodium.exe confirmed."
 
-      # ── 10. Copy backend.exe and runtime.exe ─────────────────────────────────
+      # -- 10. Copy backend.exe and runtime.exe ---------------------------------
       - name: Copy executables
         shell: cmd
         run: |
@@ -155,7 +155,7 @@ jobs:
             echo INFO: No icon.png found - installer will use default icon.
           )
 
-      # ── 11. Copy Sudo AI Extension (with node_modules) ───────────────────────
+      # -- 11. Copy Sudo AI Extension (with node_modules) -----------------------
       - name: Copy extension with node_modules
         shell: cmd
         run: |
@@ -169,7 +169,7 @@ jobs:
             exit /b 1
           )
 
-      # ── 12. Create start.bat launcher ────────────────────────────────────────
+      # -- 12. Create start.bat launcher ----------------------------------------
       #   Uses port-polling instead of blind timeouts.
       #   --user-data-dir ensures VSCodium portable isolation.
       - name: Create start.bat
@@ -287,7 +287,7 @@ jobs:
           Write-Host "--- Content preview (first 10 lines) ---"
           Get-Content "build\SudoStudio\start.bat" | Select-Object -First 10
 
-      # ── 13. Create README.txt ─────────────────────────────────────────────────
+      # -- 13. Create README.txt -------------------------------------------------
       - name: Create README.txt
         shell: powershell
         run: |
@@ -321,11 +321,11 @@ jobs:
           $lines | Out-File -FilePath "build\SudoStudio\README.txt" -Encoding UTF8
           Write-Host "README.txt created."
 
-      # ── 14. Install Inno Setup ────────────────────────────────────────────────
+      # -- 14. Install Inno Setup ------------------------------------------------
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
-      # ── 15. Create Inno Setup script ─────────────────────────────────────────
+      # -- 15. Create Inno Setup script -----------------------------------------
       - name: Create installer script
         shell: powershell
         run: |
@@ -371,7 +371,7 @@ jobs:
           Write-Host "installer.iss created."
           Get-Content "installer.iss"
 
-      # ── 16. Build installer ───────────────────────────────────────────────────
+      # -- 16. Build installer ---------------------------------------------------
       - name: Build installer with Inno Setup
         shell: cmd
         run: |
@@ -379,7 +379,7 @@ jobs:
           echo Installer built.
           dir Output
 
-      # ── 17. Verify installer ──────────────────────────────────────────────────
+      # -- 17. Verify installer --------------------------------------------------
       - name: Verify installer binary
         shell: powershell
         run: |
@@ -389,12 +389,12 @@ jobs:
             exit 1
           }
           $sizeMB = [math]::Round($setup.Length / 1MB, 1)
-          Write-Host "Installer: $($setup.Name) — $sizeMB MB"
+          Write-Host "Installer: $($setup.Name) -- $sizeMB MB"
           if ($setup.Length -lt 5MB) {
             Write-Warning "Installer looks too small ($sizeMB MB). May be incomplete."
           }
 
-      # ── 18. Upload installer artifact ────────────────────────────────────────
+      # -- 18. Upload installer artifact ----------------------------------------
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -402,7 +402,7 @@ jobs:
           path: Output\SudoStudio-Setup.exe
           retention-days: 30
 
-      # ── 19. Create portable zip ───────────────────────────────────────────────
+      # -- 19. Create portable zip -----------------------------------------------
       - name: Create portable zip
         shell: powershell
         run: |
@@ -410,7 +410,7 @@ jobs:
           $sizeMB = [math]::Round((Get-Item "Output\SudoStudio-Portable.zip").Length / 1MB, 1)
           Write-Host "Portable zip created: $sizeMB MB"
 
-      # ── 20. Upload portable zip artifact ─────────────────────────────────────
+      # -- 20. Upload portable zip artifact -------------------------------------
       - name: Upload portable zip artifact
         uses: actions/upload-artifact@v4
         with:
