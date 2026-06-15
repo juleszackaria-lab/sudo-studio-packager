@@ -23,29 +23,25 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. Download pre-built backend.exe artifact (by run ID) ──────────────
-      #   Repo source du backend : ajuster si différent du repo packager.
-      #   Si le repo source est privé, github_token est requis (PAT avec scope repo).
+      #   Repo source : Sudo-studio (public, donc pas besoin de github_token).
       - name: Download backend.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackeria-lab/sudo-studio-packager
+          repo: juleszackeria-lab/Sudo-studio
           run_id: ${{ env.BACKEND_RUN_ID }}
           name: backend-exe
           path: build/backend
-          github_token: ${{ secrets.ARTIFACT_PAT }}
           if_no_artifact_found: warn
 
       # ── 3. Download pre-built runtime.exe artifact (by run ID) ──────────────
-      #   Repo source du runtime : ajuster si différent du repo packager.
-      #   Si le repo source est privé, github_token est requis (PAT avec scope repo).
+      #   Repo source : Sudo-studio (public, donc pas besoin de github_token).
       - name: Download runtime.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
         with:
-          repo: juleszackeria-lab/sudo-studio-packager
+          repo: juleszackeria-lab/Sudo-studio
           run_id: ${{ env.RUNTIME_RUN_ID }}
           name: runtime-exe
           path: build/runtime
-          github_token: ${{ secrets.ARTIFACT_PAT }}
           if_no_artifact_found: warn
 
       # ── 4. VALIDATE artifact binaries (fail-fast if placeholders) ────────────
