@@ -22,6 +22,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # -- 1b. Checkout sudo-ai-extension from Sudo-studio (separate repo) ------
+      #   sudo-ai-extension vit dans le repo Sudo-studio, pas dans ce repo.
+      #   On le clone dans un dossier temporaire puis on copie juste ce dossier.
+      - name: Checkout sudo-ai-extension from Sudo-studio
+        uses: actions/checkout@v4
+        with:
+          repository: juleszackaria-lab/Sudo-studio
+          path: _sudo-studio-source
+
+      - name: Copy sudo-ai-extension into workspace
+        shell: cmd
+        run: |
+          if exist _sudo-studio-source\sudo-ai-extension (
+            xcopy _sudo-studio-source\sudo-ai-extension sudo-ai-extension /E /I /Y /Q
+            echo sudo-ai-extension copied from Sudo-studio repo.
+          ) else (
+            echo ERROR: sudo-ai-extension not found in Sudo-studio repo
+            dir _sudo-studio-source
+            exit /b 1
+          )
+
       # -- 2. Download pre-built backend.exe artifact (by run ID) --------------
       #   Repo source : Sudo-studio (public, donc pas besoin de github_token).
       - name: Download backend.exe (by run ID)
@@ -416,4 +437,4 @@ jobs:
         with:
           name: SudoStudio-Portable
           path: Output\SudoStudio-Portable.zip
-          retention-days: 30
+          retention-days: 
