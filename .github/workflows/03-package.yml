@@ -29,7 +29,7 @@ jobs:
      - name: Checkout sudo-ai-extension from Sudo-studio
        uses: actions/checkout@v4
        with:
-         repository: juleszackeria-lab/Sudo-studio
+         repository: juleszackaria-lab/Sudo-studio
          path: _sudo-studio-source
          ref: main
          token: ${{ secrets.PAT }}
@@ -51,7 +51,7 @@ jobs:
      - name: Download backend.exe (by run ID)
        uses: dawidd6/action-download-artifact@v5
        with:
-         repo: juleszackeria-lab/Sudo-studio
+         repo: juleszackaria-lab/Sudo-studio
          run_id: ${{ env.BACKEND_RUN_ID }}
          name: backend-exe
          path: build/backend
@@ -61,7 +61,7 @@ jobs:
      - name: Download runtime.exe (by run ID)
        uses: dawidd6/action-download-artifact@v5
        with:
-         repo: juleszackeria-lab/Sudo-studio
+         repo: juleszackaria-lab/Sudo-studio
          run_id: ${{ env.RUNTIME_RUN_ID }}
          name: runtime-exe
          path: build/runtime
