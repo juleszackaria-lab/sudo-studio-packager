@@ -1,315 +1,103 @@
 name: SudoStudio Stable Build
 
 on:
- workflow_dispatch:
- push:
-   branches: [main]
-   tags: ['v*']
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
 
 env:
- BACKEND_RUN_ID: "28027052916"
- RUNTIME_RUN_ID: "28027067429"
+  BACKEND_RUN_ID: "28027052916"
+  RUNTIME_RUN_ID: "28027067429"
 
 jobs:
- build:
-   runs-on: windows-latest
-   timeout-minutes: 90
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
 
-   steps:
-     # -- 1. Checkout this repo ------------------------------------------------
-     - name: Checkout
-       uses: actions/checkout@v4
+    steps:
+      # -- 1. Checkout this repo ------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
 
-     # -- 1b. Checkout Sudo-studio repo ----------------------------------------
-     - name: Checkout sudo-ai-extension from Sudo-studio
-       uses: actions/checkout@v4
-       with:
-         repository: juleszackeria-lab/Sudo-studio
-         path: _sudo-studio-source
-         ref: main
-         token: ${{ secrets.GITHUB_TOKEN }}
-         persist-credentials: false
+      # -- 1b. Checkout Sudo-studio repo ----------------------------------------
+      - name: Checkout sudo-ai-extension from Sudo-studio
+        uses: actions/checkout@v4
+        with:
+          repository: juleszackeria-lab/Sudo-studio
+          path: _sudo-studio-source
+          ref: main
+          token: ${{ secrets.PAT_TOKEN }}
 
-     # -- 2. Copy sudo-ai-extension --------------------------------------------
-     - name: Copy sudo-ai-extension into workspace
-       shell: cmd
-       run: |
-         if exist _sudo-studio-source\sudo-ai-extension (
-           xcopy _sudo-studio-source\sudo-ai-extension sudo-ai-extension /E /I /Y /Q
-           echo sudo-ai-extension copied from Sudo-studio repo.
-         ) else (
-           echo ERROR: sudo-ai-extension not found in Sudo-studio repo
-           dir _sudo-studio-source
-           exit /b 1
-         )
+      # -- 2. Copy sudo-ai-extension --------------------------------------------
+      - name: Copy sudo-ai-extension into workspace
+        shell: cmd
+        run: |
+          if exist _sudo-studio-source\sudo-ai-extension (
+            xcopy _sudo-studio-source\sudo-ai-extension sudo-ai-extension /E /I /Y /Q
+            echo sudo-ai-extension copied from Sudo-studio repo.
+          ) else (
+            echo ERROR: sudo-ai-extension not found in Sudo-studio repo
+            dir _sudo-studio-source
+            exit /b 1
+          )
 
-     # -- 3. Download backend.exe ----------------------------------------------
-     - name: Download backend.exe (by run ID)
-       uses: dawidd6/action-download-artifact@v5
-       with:
-         repo: juleszackeria-lab/Sudo-studio
-         run_id: ${{ env.BACKEND_RUN_ID }}
-         name: backend-exe
-         path: build/backend
-         if_no_artifact_found: warn
+      # -- 3. Download backend.exe ----------------------------------------------
+      - name: Download backend.exe (by run ID)
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackeria-lab/Sudo-studio
+          run_id: ${{ env.BACKEND_RUN_ID }}
+          name: backend-exe
+          path: build/backend
+          if_no_artifact_found: warn
 
-     # -- 4. Download runtime.exe ----------------------------------------------
-     - name: Download runtime.exe (by run ID)
-       uses: dawidd6/action-download-artifact@v5
-       with:
-         repo: juleszackeria-lab/Sudo-studio
-         run_id: ${{ env.RUNTIME_RUN_ID }}
-         name: runtime-exe
-         path: build/runtime
-         if_no_artifact_found: warn
+      # -- 4. Download runtime.exe ----------------------------------------------
+      - name: Download runtime.exe (by run ID)
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          repo: juleszackeria-lab/Sudo-studio
+          run_id: ${{ env.RUNTIME_RUN_ID }}
+          name: runtime-exe
+          path: build/runtime
+          if_no_artifact_found: warn
 
-     # -- 5. Validate artifact binaries ----------------------------------------
-     - name: Validate artifact binaries
-       shell: powershell
-       run: |
-         $backendPath = "build\backend\backend.exe"
-         $runtimePath = "build\runtime\server.exe"
-         $MIN_SIZE_BYTES = 500000
+      # -- 5. Validate artifact binaries ----------------------------------------
+      - name: Validate artifact binaries
+        shell: powershell
+        run: |
+          $backendPath = "build\backend\backend.exe"
+          $runtimePath = "build\runtime\server.exe"
+          $MIN_SIZE_BYTES = 500000
 
-         function Assert-Binary($p, $name) {
-           if (-not (Test-Path $p)) {
-             Write-Error "$name NOT FOUND at $p. Run workflow 01 / 02 first."
-             exit 1
-           }
-           $size = (Get-Item $p).Length
-           if ($size -lt $MIN_SIZE_BYTES) {
-             Write-Error "$name is only $size bytes -- looks like a placeholder."
-             exit 1
-           }
-           Write-Host "OK: $name ($([math]::Round($size/1MB,1)) MB)"
-         }
+          function Assert-Binary($p, $name) {
+            if (-not (Test-Path $p)) {
+              Write-Error "$name NOT FOUND at $p. Run workflow 01 / 02 first."
+              exit 1
+            }
+            $size = (Get-Item $p).Length
+            if ($size -lt $MIN_SIZE_BYTES) {
+              Write-Error "$name is only $size bytes -- looks like a placeholder."
+              exit 1
+            }
+            Write-Host "OK: $name ($([math]::Round($size/1MB,1)) MB)"
+          }
 
-         Assert-Binary $backendPath "backend.exe"
-         Assert-Binary $runtimePath "runtime.exe (server.exe)"
+          Assert-Binary $backendPath "backend.exe"
+          Assert-Binary $runtimePath "runtime.exe (server.exe)"
 
-     # -- 6. Setup Node.js -----------------------------------------------------
-     - name: Setup Node.js
-       uses: actions/setup-node@v4
-       with:
-         node-version: '20'
+      # -- 6. Setup Node.js -----------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-     # -- 7. Install extension dependencies ------------------------------------
-     - name: Install extension node_modules
-       shell: cmd
-       run: |
-         cd sudo-ai-extension
-         npm install --production
-         echo Extension node_modules installed.
+      # -- 7. Install extension dependencies ------------------------------------
+      - name: Install extension node_modules
+        shell: cmd
+        run: |
+          cd sudo-ai-extension
+          npm install --production
+          echo Extension node_modules installed.
 
-     # -- 8. Prepare build folders ---------------------------------------------
-     - name: Prepare build folders
-       shell: cmd
-       run: |
-         if not exist build mkdir build
-         if not exist build\SudoStudio mkdir build\SudoStudio
-         if not exist build\SudoStudio\app mkdir build\SudoStudio\app
-         if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
-         if not exist build\SudoStudio\app\data mkdir build\SudoStudio\app\data
-         if not exist Output mkdir Output
-         echo Folders created.
-
-     # -- 9. Download VSCodium portable ----------------------------------------
-     - name: Download VSCodium portable
-       shell: powershell
-       run: |
-         $ver = "1.97.2.25045"
-         $url = "https://github.com/VSCodium/vscodium/releases/download/$ver/VSCodium-win32-x64-$ver.zip"
-         Write-Host "Downloading VSCodium $ver..."
-         Invoke-WebRequest $url -OutFile vscodium.zip -TimeoutSec 300
-         Write-Host "VSCodium downloaded: $([math]::Round((Get-Item vscodium.zip).Length/1MB,1)) MB"
-
-     # -- 10. Extract VSCodium -------------------------------------------------
-     - name: Extract VSCodium
-       shell: powershell
-       run: |
-         Expand-Archive vscodium.zip build\SudoStudio\app -Force
-         Write-Host "VSCodium extracted."
-         if (-not (Test-Path "build\SudoStudio\app\VSCodium.exe")) {
-           Write-Error "VSCodium.exe not found after extraction!"
-           exit 1
-         }
-         Write-Host "VSCodium.exe confirmed."
-
-     # -- 11. Copy executables -------------------------------------------------
-     - name: Copy executables
-       shell: cmd
-       run: |
-         copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
-         echo backend.exe copied.
-
-         if exist build\runtime\server.exe (
-           copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
-           echo runtime.exe copied from server.exe.
-         ) else if exist build\runtime\runtime.exe (
-           copy build\runtime\runtime.exe build\SudoStudio\app\runtime.exe /Y
-           echo runtime.exe copied.
-         ) else (
-           echo ERROR: Neither server.exe nor runtime.exe found in build\runtime\
-           dir build\runtime
-           exit /b 1
-         )
-
-         if exist resources\icon.png (
-           copy resources\icon.png build\SudoStudio\logo.ico /Y
-           echo icon copied.
-         ) else (
-           echo INFO: No icon.png found - installer will use default icon.
-         )
-
-     # -- 12. Copy extension with node_modules ---------------------------------
-     - name: Copy extension with node_modules
-       shell: cmd
-       run: |
-         if exist sudo-ai-extension (
-           xcopy sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y /Q
-           echo Extension copied.
-         ) else (
-           echo ERROR: sudo-ai-extension directory not found
-           exit /b 1
-         )
-
-     # -- 13. Copy start.bat from Sudo-studio repo -----------------------------
-     - name: Copy start.bat from Sudo-studio repo
-       shell: cmd
-       run: |
-         if exist _sudo-studio-source\start.bat (
-           copy _sudo-studio-source\start.bat build\SudoStudio\start.bat /Y
-           echo start.bat copied from Sudo-studio repo.
-           echo --- Content preview ---
-           type build\SudoStudio\start.bat
-         ) else (
-           echo ERROR: start.bat not found in Sudo-studio repo
-           dir _sudo-studio-source
-           exit /b 1
-         )
-
-     # -- 14. Create README.txt ------------------------------------------------
-     - name: Create README.txt
-       shell: powershell
-       run: |
-         $lines = @(
-           'SUDO STUDIO',
-           '===========',
-           '',
-           'How to start:',
-           '1. Double-click start.bat',
-           '2. Wait for services to launch (up to 30 seconds each)',
-           '3. VSCodium opens automatically with the Sudo AI extension',
-           '',
-           'Services:',
-           '- backend.exe  : API server on port 5000',
-           '- runtime.exe  : AI inference server on port 6000',
-           '                 (downloads TinyLlama ~600MB on first run)',
-           '- VSCodium.exe : Code editor with Sudo AI extension',
-           '',
-           'Requirements:',
-           '- Windows 10 / 11',
-           '- Internet connection (first run only, for model download)',
-           '- ~1.5 GB free disk space',
-           '- ~4 GB RAM recommended',
-           '',
-           'AI model cache: %USERPROFILE%\.sudo_studio\models\'
-         )
-         $lines | Out-File -FilePath "build\SudoStudio\README.txt" -Encoding UTF8
-         Write-Host "README.txt created."
-
-     # -- 15. Install Inno Setup -----------------------------------------------
-     - name: Install Inno Setup
-       run: choco install innosetup -y --no-progress
-
-     # -- 16. Create Inno Setup script -----------------------------------------
-     - name: Create installer script
-       shell: powershell
-       run: |
-         $hasIcon = Test-Path "build\SudoStudio\logo.ico"
-         $iconLine = if ($hasIcon) { 'SetupIconFile=build\SudoStudio\logo.ico' } else { '' }
-
-         $lines = @(
-           '[Setup]',
-           'AppName=SudoStudio',
-           'AppVersion=1.0.0',
-           'AppPublisher=SudoStudio',
-           'AppPublisherURL=https://github.com/juleszackeria-lab/sudo-studio-packager',
-           'DefaultDirName={autopf}\SudoStudio',
-           'DefaultGroupName=SudoStudio',
-           'OutputDir=Output',
-           'OutputBaseFilename=SudoStudio-Setup',
-           'Compression=lzma',
-           'SolidCompression=yes',
-           'WizardStyle=modern',
-           'DisableProgramGroupPage=yes',
-           'PrivilegesRequired=lowest'
-         )
-         if ($iconLine) { $lines += $iconLine }
-         $lines += @(
-           '',
-           '[Languages]',
-           'Name: "english"; MessagesFile: "compiler:Default.isl"',
-           '',
-           '[Tasks]',
-           'Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"',
-           '',
-           '[Files]',
-           'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs',
-           '',
-           '[Icons]',
-           'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"',
-           'Name: "{userdesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon',
-           '',
-           '[Run]',
-           'Filename: "{app}\start.bat"; Description: "Launch SudoStudio now"; Flags: postinstall nowait skipifsilent'
-         )
-         $lines | Out-File -FilePath "installer.iss" -Encoding UTF8
-         Write-Host "installer.iss created."
-
-     # -- 17. Build installer --------------------------------------------------
-     - name: Build installer with Inno Setup
-       shell: cmd
-       run: |
-         "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-         echo Installer built.
-         dir Output
-
-     # -- 18. Verify installer -------------------------------------------------
-     - name: Verify installer binary
-       shell: powershell
-       run: |
-         $setup = Get-ChildItem "Output\*.exe" | Select-Object -First 1
-         if (-not $setup) {
-           Write-Error "Installer EXE not found in Output\"
-           exit 1
-         }
-         $sizeMB = [math]::Round($setup.Length / 1MB, 1)
-         Write-Host "Installer: $($setup.Name) -- $sizeMB MB"
-         if ($setup.Length -lt 5MB) {
-           Write-Warning "Installer looks too small ($sizeMB MB). May be incomplete."
-         }
-
-     # -- 19. Upload installer artifact ----------------------------------------
-     - name: Upload installer artifact
-       uses: actions/upload-artifact@v4
-       with:
-         name: SudoStudio-Installer
-         path: Output\SudoStudio-Setup.exe
-         retention-days: 30
-
-     # -- 20. Create portable zip ----------------------------------------------
-     - name: Create portable zip
-       shell: powershell
-       run: |
-         Compress-Archive -Path "build\SudoStudio\*" -DestinationPath "Output\SudoStudio-Portable.zip" -Force
-         $sizeMB = [math]::Round((Get-Item "Output\SudoStudio-Portable.zip").Length / 1MB, 1)
-         Write-Host "Portable zip created: $sizeMB MB"
-
-     # -- 21. Upload portable zip artifact -------------------------------------
-     - name: Upload portable zip artifact
-       uses: actions/upload-artifact@v4
-       with:
-         name: SudoStudio-Portable
-         path: Output\SudoStudio-Portable.zip
-         retention-days: 30
+      # -- 8. Prepare build folders
