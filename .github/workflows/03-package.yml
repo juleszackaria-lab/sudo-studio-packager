@@ -184,8 +184,6 @@ jobs:
           if exist _sudo-studio-source\start.bat (
             copy _sudo-studio-source\start.bat build\SudoStudio\start.bat /Y
             echo start.bat copied from Sudo-studio repo.
-            echo --- Content preview ---
-            type build\SudoStudio\start.bat
           ) else (
             echo ERROR: start.bat not found in Sudo-studio repo
             dir _sudo-studio-source
@@ -222,27 +220,81 @@ jobs:
           $lines | Out-File -FilePath "build\SudoStudio\README.txt" -Encoding UTF8
           Write-Host "README.txt created."
 
-      # -- 15. Install Inno Setup -----------------------------------------------
+      # -- 15. Validate build structure -----------------------------------------
+      - name: Validate build structure
+        shell: cmd
+        run: |
+          echo === VALIDATION STRUCTURE ===
+          dir build\SudoStudio /s /b
+          echo ============================
+
+          if not exist build\SudoStudio\start.bat (
+            echo ERROR: start.bat manquant dans build\SudoStudio\
+            exit /b 1
+          )
+          if not exist build\SudoStudio\app\backend.exe (
+            echo ERROR: backend.exe manquant
+            exit /b 1
+          )
+          if not exist build\SudoStudio\app\runtime.exe (
+            echo ERROR: runtime.exe manquant
+            exit /b 1
+          )
+          if not exist build\SudoStudio\app\VSCodium.exe (
+            echo ERROR: VSCodium.exe manquant
+            exit /b 1
+          )
+          if not exist "build\SudoStudio\app\extensions\sudo-ai\extension.js" (
+            echo ERROR: extension sudo-ai manquante
+            exit /b 1
+          )
+          echo === TOUS LES FICHIERS PRESENTS ===
+
+      # -- 16. Install Inno Setup -----------------------------------------------
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
-      # -- 16. Copy installer.iss from Sudo-studio repo -------------------------
-      - name: Copy installer.iss from Sudo-studio repo
-        shell: cmd
+      # -- 17. Create installer.iss ---------------------------------------------
+      - name: Create installer.iss
+        shell: powershell
         run: |
-          if exist _sudo-studio-source\installer.iss (
-            copy _sudo-studio-source\installer.iss installer.iss /Y
-            echo installer.iss copied from Sudo-studio repo.
-            echo --- Content preview ---
-            type installer.iss
-          ) else (
-            echo WARNING: installer.iss not found in Sudo-studio repo
-            echo Generating installer.iss...
-            powershell -Command "$lines = @('[Setup]','AppName=SudoStudio','AppVersion=1.0.0','AppPublisher=SudoStudio','AppPublisherURL=https://github.com/juleszackeria-lab/sudo-studio-packager','DefaultDirName={autopf}\SudoStudio','DefaultGroupName=SudoStudio','OutputDir=Output','OutputBaseFilename=SudoStudio-Setup','Compression=lzma','SolidCompression=yes','WizardStyle=modern','DisableProgramGroupPage=yes','PrivilegesRequired=lowest','','[Languages]','Name: \"english\"; MessagesFile: \"compiler:Default.isl\"','','[Tasks]','Name: \"desktopicon\"; Description: \"Create a desktop shortcut\"; GroupDescription: \"Additional icons:\"','','[Files]','Source: \"build\SudoStudio\*\"; DestDir: \"{app}\"; Flags: recursesubdirs','','[Icons]','Name: \"{group}\SudoStudio\"; Filename: \"{app}\start.bat\"; WorkingDir: \"{app}\"','Name: \"{userdesktop}\SudoStudio\"; Filename: \"{app}\start.bat\"; WorkingDir: \"{app}\"; Tasks: desktopicon','','[Run]','Filename: \"{app}\start.bat\"; Description: \"Launch SudoStudio now\"; Flags: postinstall nowait skipifsilent'); $lines | Out-File -FilePath installer.iss -Encoding UTF8"
-            echo installer.iss generated with fallback.
+          $lines = @(
+            '[Setup]',
+            'AppName=SudoStudio',
+            'AppVersion=1.0.0',
+            'AppPublisher=SudoStudio',
+            'AppPublisherURL=https://github.com/juleszackaria-lab/Sudo-studio',
+            'DefaultDirName={autopf}\SudoStudio',
+            'DefaultGroupName=SudoStudio',
+            'OutputDir=Output',
+            'OutputBaseFilename=SudoStudio-Setup',
+            'Compression=lzma',
+            'SolidCompression=yes',
+            'WizardStyle=modern',
+            'DisableProgramGroupPage=yes',
+            'PrivilegesRequired=lowest',
+            '',
+            '[Languages]',
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            '',
+            '[Tasks]',
+            'Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"',
+            '',
+            '[Files]',
+            'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs',
+            '',
+            '[Icons]',
+            'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"',
+            'Name: "{userdesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon',
+            '',
+            '[Run]',
+            'Filename: "{app}\start.bat"; WorkingDir: "{app}"; Description: "Launch SudoStudio"; Flags: postinstall nowait skipifsilent'
           )
+          $lines | Out-File -FilePath "installer.iss" -Encoding ASCII
+          Write-Host "installer.iss created."
+          Get-Content "installer.iss"
 
-      # -- 17. Build installer --------------------------------------------------
+      # -- 18. Build installer --------------------------------------------------
       - name: Build installer with Inno Setup
         shell: cmd
         run: |
@@ -250,7 +302,7 @@ jobs:
           echo Installer built.
           dir Output
 
-      # -- 18. Verify installer -------------------------------------------------
+      # -- 19. Verify installer -------------------------------------------------
       - name: Verify installer binary
         shell: powershell
         run: |
@@ -265,7 +317,7 @@ jobs:
             Write-Warning "Installer looks too small ($sizeMB MB). May be incomplete."
           }
 
-      # -- 19. Upload installer artifact ----------------------------------------
+      # -- 20. Upload installer artifact ----------------------------------------
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -273,7 +325,7 @@ jobs:
           path: Output\SudoStudio-Setup.exe
           retention-days: 30
 
-      # -- 20. Create portable zip ----------------------------------------------
+      # -- 21. Create portable zip ----------------------------------------------
       - name: Create portable zip
         shell: powershell
         run: |
@@ -281,7 +333,7 @@ jobs:
           $sizeMB = [math]::Round((Get-Item "Output\SudoStudio-Portable.zip").Length / 1MB, 1)
           Write-Host "Portable zip created: $sizeMB MB"
 
-      # -- 21. Upload portable zip artifact -------------------------------------
+      # -- 22. Upload portable zip artifact -------------------------------------
       - name: Upload portable zip artifact
         uses: actions/upload-artifact@v4
         with:
