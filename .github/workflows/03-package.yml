@@ -143,14 +143,14 @@ jobs:
       - name: Copy executables
         shell: cmd
         run: |
-          copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
-          echo backend.exe copied.
+          copy build\backend\backend.exe build\SudoStudio\backend.exe /Y
+          echo backend.exe copied to root.
 
           if exist build\runtime\server.exe (
-            copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
+            copy build\runtime\server.exe build\SudoStudio\runtime.exe /Y
             echo runtime.exe copied from server.exe.
           ) else if exist build\runtime\runtime.exe (
-            copy build\runtime\runtime.exe build\SudoStudio\app\runtime.exe /Y
+            copy build\runtime\runtime.exe build\SudoStudio\runtime.exe /Y
             echo runtime.exe copied.
           ) else (
             echo ERROR: Neither server.exe nor runtime.exe found in build\runtime\
@@ -229,14 +229,14 @@ jobs:
           echo ============================
 
           if not exist build\SudoStudio\start.bat (
-            echo ERROR: start.bat manquant dans build\SudoStudio\
+            echo ERROR: start.bat manquant
             exit /b 1
           )
-          if not exist build\SudoStudio\app\backend.exe (
+          if not exist build\SudoStudio\backend.exe (
             echo ERROR: backend.exe manquant
             exit /b 1
           )
-          if not exist build\SudoStudio\app\runtime.exe (
+          if not exist build\SudoStudio\runtime.exe (
             echo ERROR: runtime.exe manquant
             exit /b 1
           )
