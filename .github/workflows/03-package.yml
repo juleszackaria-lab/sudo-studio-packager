@@ -114,6 +114,7 @@ jobs:
           if not exist build\SudoStudio\app mkdir build\SudoStudio\app
           if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
           if not exist build\SudoStudio\app\data mkdir build\SudoStudio\app\data
+          if not exist build\SudoStudio\app\native-modules mkdir build\SudoStudio\app\native-modules
           if not exist Output mkdir Output
           echo Folders created.
 
@@ -163,6 +164,19 @@ jobs:
             echo icon copied.
           ) else (
             echo INFO: No icon.png found - installer will use default icon.
+          )
+
+      # -- 11b. Copy native modules ---------------------------------------------
+      - name: Copy native modules
+        shell: cmd
+        run: |
+          if exist build\backend\native-modules (
+            xcopy build\backend\native-modules build\SudoStudio\native-modules /E /I /Y /Q
+            echo Native modules copied to root.
+            dir build\SudoStudio\native-modules
+          ) else (
+            echo WARNING: native-modules folder not found in backend artifact.
+            echo Backend may crash at runtime due to missing sqlite3/bcrypt.
           )
 
       # -- 12. Copy extension with node_modules ---------------------------------
