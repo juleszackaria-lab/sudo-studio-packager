@@ -106,17 +106,23 @@ jobs:
           echo Extension node_modules installed.
 
       # -- 8. Prepare build folders ---------------------------------------------
+      # STRUCTURE FINALE SYNCHRONISEE AVEC start.bat v4.1 :
+      # Tout a la RACINE de build\SudoStudio\
+      # backend.exe   → RACINE
+      # runtime.exe   → RACINE
+      # VSCodium.exe  → RACINE
+      # extensions\   → RACINE
+      # start.bat     → RACINE
       - name: Prepare build folders
         shell: cmd
         run: |
           if not exist build mkdir build
           if not exist build\SudoStudio mkdir build\SudoStudio
-          if not exist build\SudoStudio\app mkdir build\SudoStudio\app
-          if not exist build\SudoStudio\app\extensions mkdir build\SudoStudio\app\extensions
-          if not exist build\SudoStudio\app\data mkdir build\SudoStudio\app\data
-          if not exist build\SudoStudio\app\native-modules mkdir build\SudoStudio\app\native-modules
+          if not exist build\SudoStudio\extensions mkdir build\SudoStudio\extensions
+          if not exist build\SudoStudio\data mkdir build\SudoStudio\data
+          if not exist build\SudoStudio\logs mkdir build\SudoStudio\logs
           if not exist Output mkdir Output
-          echo Folders created.
+          echo Folders created - structure synchronisee avec start.bat v4.1
 
       # -- 9. Download VSCodium portable ----------------------------------------
       - name: Download VSCodium portable
@@ -128,33 +134,34 @@ jobs:
           Invoke-WebRequest $url -OutFile vscodium.zip -TimeoutSec 300
           Write-Host "VSCodium downloaded: $([math]::Round((Get-Item vscodium.zip).Length/1MB,1)) MB"
 
-      # -- 10. Extract VSCodium -------------------------------------------------
-      - name: Extract VSCodium
+      # -- 10. Extract VSCodium a la RACINE -------------------------------------
+      - name: Extract VSCodium to ROOT
         shell: powershell
         run: |
-          Expand-Archive vscodium.zip build\SudoStudio\app -Force
-          Write-Host "VSCodium extracted."
-          if (-not (Test-Path "build\SudoStudio\app\VSCodium.exe")) {
-            Write-Error "VSCodium.exe not found after extraction!"
+          Expand-Archive vscodium.zip build\SudoStudio -Force
+          Write-Host "VSCodium extracted to ROOT."
+          if (-not (Test-Path "build\SudoStudio\VSCodium.exe")) {
+            Write-Error "VSCodium.exe not found at ROOT after extraction!"
             exit 1
           }
-          Write-Host "VSCodium.exe confirmed."
+          Write-Host "VSCodium.exe confirmed at ROOT."
 
-      # -- 11. Copy executables into app\ ---------------------------------------
-      - name: Copy executables
+      # -- 11. Copy executables a la RACINE -------------------------------------
+      # start.bat v4.1 cherche backend.exe et runtime.exe a la RACINE
+      - name: Copy executables to ROOT
         shell: cmd
         run: |
-          copy build\backend\backend.exe build\SudoStudio\app\backend.exe /Y
-          echo backend.exe copied to app\.
+          copy build\backend\backend.exe build\SudoStudio\backend.exe /Y
+          echo backend.exe copied to ROOT.
 
           if exist build\runtime\server.exe (
-            copy build\runtime\server.exe build\SudoStudio\app\runtime.exe /Y
-            echo runtime.exe copied from server.exe.
+            copy build\runtime\server.exe build\SudoStudio\runtime.exe /Y
+            echo runtime.exe copied from server.exe to ROOT.
           ) else if exist build\runtime\runtime.exe (
-            copy build\runtime\runtime.exe build\SudoStudio\app\runtime.exe /Y
-            echo runtime.exe copied.
+            copy build\runtime\runtime.exe build\SudoStudio\runtime.exe /Y
+            echo runtime.exe copied to ROOT.
           ) else (
-            echo ERROR: Neither server.exe nor runtime.exe found in build\runtime\
+            echo ERROR: Neither server.exe nor runtime.exe found
             dir build\runtime
             exit /b 1
           )
@@ -163,29 +170,17 @@ jobs:
             copy resources\icon.png build\SudoStudio\logo.ico /Y
             echo icon copied.
           ) else (
-            echo INFO: No icon.png found - installer will use default icon.
+            echo INFO: No icon.png found.
           )
 
-      # -- 11b. Copy native modules into app\native-modules\ --------------------
-      - name: Copy native modules
-        shell: cmd
-        run: |
-          if exist build\backend\native-modules (
-            xcopy build\backend\native-modules build\SudoStudio\app\native-modules /E /I /Y /Q
-            echo Native modules copied to app\native-modules\.
-            dir build\SudoStudio\app\native-modules
-          ) else (
-            echo WARNING: native-modules folder not found in backend artifact.
-            echo Backend may crash at runtime due to missing sqlite3/bcrypt.
-          )
-
-      # -- 12. Copy extension with node_modules ---------------------------------
-      - name: Copy extension with node_modules
+      # -- 12. Copy extension a RACINE\extensions\sudo-ai -----------------------
+      # start.bat v4.1 cherche %ROOT%extensions\sudo-ai
+      - name: Copy extension to ROOT\extensions\sudo-ai
         shell: cmd
         run: |
           if exist sudo-ai-extension (
-            xcopy sudo-ai-extension build\SudoStudio\app\extensions\sudo-ai /E /I /Y /Q
-            echo Extension copied.
+            xcopy sudo-ai-extension build\SudoStudio\extensions\sudo-ai /E /I /Y /Q
+            echo Extension copied to ROOT\extensions\sudo-ai.
           ) else (
             echo ERROR: sudo-ai-extension directory not found
             exit /b 1
@@ -217,52 +212,57 @@ jobs:
             '2. Wait for services to launch (up to 30 seconds each)',
             '3. VSCodium opens automatically with the Sudo AI extension',
             '',
-            'Services:',
-            '- backend.exe  : API server on port 5000',
-            '- runtime.exe  : AI inference server on port 6000',
-            '                 (downloads TinyLlama ~600MB on first run)',
-            '- VSCodium.exe : Code editor with Sudo AI extension',
-            '',
-            'Requirements:',
-            '- Windows 10 / 11',
-            '- Internet connection (first run only, for model download)',
-            '- ~1.5 GB free disk space',
-            '- ~4 GB RAM recommended',
-            '',
-            'AI model cache: %USERPROFILE%\.sudo_studio\models\'
+            'Structure:',
+            '- backend.exe   : API server port 5000',
+            '- runtime.exe   : AI server port 6000',
+            '- VSCodium.exe  : Code editor',
+            '- extensions\   : Sudo AI extension',
+            '- data\         : Database',
+            '- logs\         : Log files'
           )
           $lines | Out-File -FilePath "build\SudoStudio\README.txt" -Encoding UTF8
           Write-Host "README.txt created."
 
       # -- 15. Validate build structure -----------------------------------------
+      # Verification que tout est a la RACINE comme start.bat v4.1 le cherche
       - name: Validate build structure
         shell: cmd
         run: |
-          echo === VALIDATION STRUCTURE ===
+          echo === VALIDATION STRUCTURE SYNCHRONISEE AVEC start.bat v4.1 ===
           dir build\SudoStudio /s /b
-          echo ============================
+          echo ==============================================================
 
           if not exist build\SudoStudio\start.bat (
-            echo ERROR: start.bat manquant
+            echo ERROR: start.bat manquant a la RACINE
             exit /b 1
           )
-          if not exist build\SudoStudio\app\backend.exe (
-            echo ERROR: backend.exe manquant dans app\
+          echo OK: start.bat a la RACINE
+
+          if not exist build\SudoStudio\backend.exe (
+            echo ERROR: backend.exe manquant a la RACINE
             exit /b 1
           )
-          if not exist build\SudoStudio\app\runtime.exe (
-            echo ERROR: runtime.exe manquant dans app\
+          echo OK: backend.exe a la RACINE
+
+          if not exist build\SudoStudio\runtime.exe (
+            echo ERROR: runtime.exe manquant a la RACINE
             exit /b 1
           )
-          if not exist build\SudoStudio\app\VSCodium.exe (
-            echo ERROR: VSCodium.exe manquant
+          echo OK: runtime.exe a la RACINE
+
+          if not exist build\SudoStudio\VSCodium.exe (
+            echo ERROR: VSCodium.exe manquant a la RACINE
             exit /b 1
           )
-          if not exist "build\SudoStudio\app\extensions\sudo-ai\extension.js" (
+          echo OK: VSCodium.exe a la RACINE
+
+          if not exist "build\SudoStudio\extensions\sudo-ai\extension.js" (
             echo ERROR: extension sudo-ai manquante
             exit /b 1
           )
-          echo === TOUS LES FICHIERS PRESENTS ===
+          echo OK: extensions\sudo-ai presente
+
+          echo === TOUT EST EN PLACE - SYNCHRONISE AVEC start.bat v4.1 ===
 
       # -- 16. Install Inno Setup -----------------------------------------------
       - name: Install Inno Setup
