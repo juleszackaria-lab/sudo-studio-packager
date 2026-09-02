@@ -106,13 +106,6 @@ jobs:
           echo Extension node_modules installed.
 
       # -- 8. Prepare build folders ---------------------------------------------
-      # STRUCTURE FINALE SYNCHRONISEE AVEC start.bat v4.1 :
-      # Tout a la RACINE de build\SudoStudio\
-      # backend.exe   → RACINE
-      # runtime.exe   → RACINE
-      # VSCodium.exe  → RACINE
-      # extensions\   → RACINE
-      # start.bat     → RACINE
       - name: Prepare build folders
         shell: cmd
         run: |
@@ -146,8 +139,19 @@ jobs:
           }
           Write-Host "VSCodium.exe confirmed at ROOT."
 
+      # -- 10b. Customize VSCodium branding to Sudo Studio ----------------------
+      - name: Customize VSCodium branding
+        shell: powershell
+        run: |
+          $scriptPath = "_sudo-studio-source\scripts\customize-vscodium.ps1"
+          if (Test-Path $scriptPath) {
+            & $scriptPath -VSCodiumPath "build\SudoStudio"
+            Write-Host "VSCodium customized to Sudo Studio branding."
+          } else {
+            Write-Warning "customize-vscodium.ps1 not found - skipping branding customization."
+          }
+
       # -- 11. Copy executables a la RACINE -------------------------------------
-      # start.bat v4.1 cherche backend.exe et runtime.exe a la RACINE
       - name: Copy executables to ROOT
         shell: cmd
         run: |
@@ -174,7 +178,6 @@ jobs:
           )
 
       # -- 12. Copy extension a RACINE\extensions\sudo-ai -----------------------
-      # start.bat v4.1 cherche %ROOT%extensions\sudo-ai
       - name: Copy extension to ROOT\extensions\sudo-ai
         shell: cmd
         run: |
@@ -210,12 +213,12 @@ jobs:
             'How to start:',
             '1. Double-click start.bat',
             '2. Wait for services to launch (up to 30 seconds each)',
-            '3. VSCodium opens automatically with the Sudo AI extension',
+            '3. Sudo Studio opens automatically with the Sudo AI extension',
             '',
             'Structure:',
             '- backend.exe   : API server port 5000',
             '- runtime.exe   : AI server port 6000',
-            '- VSCodium.exe  : Code editor',
+            '- VSCodium.exe  : Code editor (Sudo Studio)',
             '- extensions\   : Sudo AI extension',
             '- data\         : Database',
             '- logs\         : Log files'
@@ -224,7 +227,6 @@ jobs:
           Write-Host "README.txt created."
 
       # -- 15. Validate build structure -----------------------------------------
-      # Verification que tout est a la RACINE comme start.bat v4.1 le cherche
       - name: Validate build structure
         shell: cmd
         run: |
@@ -286,7 +288,8 @@ jobs:
             'SolidCompression=yes',
             'WizardStyle=modern',
             'DisableProgramGroupPage=yes',
-            'PrivilegesRequired=lowest',
+            'PrivilegesRequired=admin',
+            'PrivilegesRequiredOverridesAllowed=dialog',
             '',
             '[Languages]',
             'Name: "english"; MessagesFile: "compiler:Default.isl"',
