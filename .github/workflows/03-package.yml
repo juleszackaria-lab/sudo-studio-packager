@@ -145,7 +145,7 @@ jobs:
         run: |
           $scriptPath = "_sudo-studio-source\scripts\customize-vscodium.ps1"
           if (Test-Path $scriptPath) {
-            & $scriptPath -VSCodiumPath "build\SudoStudio"
+            & $scriptPath -VSCodiumDir "build\SudoStudio"
             Write-Host "VSCodium customized to Sudo Studio branding."
           } else {
             Write-Warning "customize-vscodium.ps1 not found - skipping branding customization."
