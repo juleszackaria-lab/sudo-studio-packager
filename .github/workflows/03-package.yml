@@ -179,11 +179,23 @@ jobs:
       - name: Patch exe icon with rcedit
         shell: powershell
         run: |
-          npm install -g rcedit
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "[FAIL] npm install -g rcedit failed (exit $LASTEXITCODE)"
+          # Standalone rcedit exe: 'npm install -g rcedit' succeeds but its bin dir
+          # is NOT on PATH on windows runners -> 'rcedit not recognized'.
+          # v2.0.0 is the same engine the (deprecated) npm package wraps.
+          $rcExe = "build\rcedit-x64.exe"
+          if (-not (Test-Path $rcExe)) {
+            Invoke-WebRequest "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe" -OutFile $rcExe -TimeoutSec 120 -UseBasicParsing
+          }
+          if (-not (Test-Path $rcExe)) {
+            Write-Error "[FAIL] rcedit-x64.exe download failed"
             exit 1
           }
+          $rcSize = (Get-Item $rcExe).Length
+          if ($rcSize -lt 500000) {
+            Write-Error "[FAIL] rcedit-x64.exe too small ($rcSize bytes) - bad download"
+            exit 1
+          }
+          Write-Host "[OK] rcedit ready: $([math]::Round($rcSize/1KB,1)) KB standalone"
           $exe = "build\SudoStudio\VSCodium.exe"
           $ico = "build\SudoStudio\logo.ico"
           if (-not (Test-Path $exe)) {
@@ -194,19 +206,19 @@ jobs:
             Write-Error "[FAIL] $ico not found -- cannot patch executable icon"
             exit 1
           }
-          rcedit $exe --set-icon $ico
+          & $rcExe $exe --set-icon $ico
           if ($LASTEXITCODE -ne 0) {
             Write-Error "[FAIL] rcedit --set-icon failed (exit $LASTEXITCODE)"
             exit 1
           }
           Write-Host "[OK] rcedit: icon patched from $ico"
-          rcedit $exe --set-version-string "ProductName"    "Sudo Studio"
+          & $rcExe $exe --set-version-string "ProductName"    "Sudo Studio"
           if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit ProductName failed"; exit 1 }
-          rcedit $exe --set-version-string "FileDescription" "Sudo Studio"
+          & $rcExe $exe --set-version-string "FileDescription" "Sudo Studio"
           if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit FileDescription failed"; exit 1 }
-          rcedit $exe --set-version-string "CompanyName"    "Sudo Studio"
+          & $rcExe $exe --set-version-string "CompanyName"    "Sudo Studio"
           if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit CompanyName failed"; exit 1 }
-          rcedit $exe --set-version-string "InternalName"   "sudo-studio"
+          & $rcExe $exe --set-version-string "InternalName"   "sudo-studio"
           if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit InternalName failed"; exit 1 }
           Write-Host "[OK] rcedit: version strings patched"
 
