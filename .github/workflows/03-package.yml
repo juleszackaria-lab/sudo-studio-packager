@@ -139,6 +139,27 @@ jobs:
           }
           Write-Host "VSCodium.exe confirmed at ROOT."
 
+      # -- 10a. Provide valid logo.ico for branding ------------------------------
+      # The branding script needs a REAL multi-resolution ICO. Sudo-studio's
+      # resources\icon.ico is verified valid (6 sizes, 41KB) -- never a PNG
+      # renamed to .ico (that broken approach was removed from step 11).
+      - name: Provide valid logo.ico
+        shell: powershell
+        run: |
+          $src = "_sudo-studio-source\resources\icon.ico"
+          $dst = "build\SudoStudio\logo.ico"
+          if (-not (Test-Path $src)) {
+            Write-Error "[FAIL] Valid ICO source missing at $src -- cannot brand icons"
+            exit 1
+          }
+          Copy-Item $src $dst -Force
+          $magic = [System.IO.File]::ReadAllBytes($dst)[0..3]
+          if (!($magic[0] -eq 0x00 -and $magic[1] -eq 0x00 -and $magic[2] -eq 0x01 -and $magic[3] -eq 0x00)) {
+            Write-Error "[FAIL] $dst is NOT a valid ICO file (bad magic bytes)"
+            exit 1
+          }
+          Write-Host "[OK] logo.ico ready: $([math]::Round((Get-Item $dst).Length/1KB,1)) KB, real ICO format"
+
       # -- 10b. Customize VSCodium branding to Sudo Studio ----------------------
       - name: Customize VSCodium branding
         shell: powershell
@@ -148,8 +169,78 @@ jobs:
             & $scriptPath -VSCodiumDir "build\SudoStudio"
             Write-Host "VSCodium customized to Sudo Studio branding."
           } else {
-            Write-Warning "customize-vscodium.ps1 not found - skipping branding customization."
+            Write-Error "customize-vscodium.ps1 not found - refusing to ship an unbranded build."
+            exit 1
           }
+
+      # -- 10c. Patch exe icon + version strings with rcedit --------------------
+      # This sets the taskbar / window-corner / Alt+Tab icon. Without it the app
+      # keeps the stock VSCodium icon even if everything else is branded.
+      - name: Patch exe icon with rcedit
+        shell: powershell
+        run: |
+          npm install -g rcedit
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "[FAIL] npm install -g rcedit failed (exit $LASTEXITCODE)"
+            exit 1
+          }
+          $exe = "build\SudoStudio\VSCodium.exe"
+          $ico = "build\SudoStudio\logo.ico"
+          if (-not (Test-Path $exe)) {
+            Write-Error "[FAIL] $exe not found -- cannot patch executable icon"
+            exit 1
+          }
+          if (-not (Test-Path $ico)) {
+            Write-Error "[FAIL] $ico not found -- cannot patch executable icon"
+            exit 1
+          }
+          rcedit $exe --set-icon $ico
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "[FAIL] rcedit --set-icon failed (exit $LASTEXITCODE)"
+            exit 1
+          }
+          Write-Host "[OK] rcedit: icon patched from $ico"
+          rcedit $exe --set-version-string "ProductName"    "Sudo Studio"
+          if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit ProductName failed"; exit 1 }
+          rcedit $exe --set-version-string "FileDescription" "Sudo Studio"
+          if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit FileDescription failed"; exit 1 }
+          rcedit $exe --set-version-string "CompanyName"    "Sudo Studio"
+          if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit CompanyName failed"; exit 1 }
+          rcedit $exe --set-version-string "InternalName"   "sudo-studio"
+          if ($LASTEXITCODE -ne 0) { Write-Error "[FAIL] rcedit InternalName failed"; exit 1 }
+          Write-Host "[OK] rcedit: version strings patched"
+
+      # -- 10d. Rename VSCodium.exe -> SudoStudio.exe -----------------------------
+      # start.bat (v4.1+) already prefers SudoStudio.exe with VSCodium.exe
+      # fallback, so the rename is safe. The tile manifest was already renamed
+      # by the branding script (STEP 4e) to match.
+      - name: Rename exe to SudoStudio.exe
+        shell: powershell
+        run: |
+          $from = "build\SudoStudio\VSCodium.exe"
+          $to = "build\SudoStudio\SudoStudio.exe"
+          if (-not (Test-Path $from)) {
+            Write-Error "[FAIL] $from not found -- cannot rename"
+            exit 1
+          }
+          Move-Item $from $to -Force
+          Write-Host "[OK] Renamed VSCodium.exe -> SudoStudio.exe"
+
+      # -- 10e. Verify exe branding stuck -----------------------------------------
+      - name: Verify SudoStudio.exe branding
+        shell: powershell
+        run: |
+          $exe = "build\SudoStudio\SudoStudio.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "[FAIL] $exe not found after rename"
+            exit 1
+          }
+          $vi = (Get-Item $exe).VersionInfo
+          Write-Host "[VERIFY] ProductName: $($vi.ProductName) | FileDescription: $($vi.FileDescription) | Company: $($vi.CompanyName)"
+          if ($vi.ProductName -ne "Sudo Studio") { Write-Error "[FAIL] ProductName not patched"; exit 1 }
+          if ($vi.FileDescription -ne "Sudo Studio") { Write-Error "[FAIL] FileDescription not patched"; exit 1 }
+          if ($vi.CompanyName -ne "Sudo Studio") { Write-Error "[FAIL] CompanyName not patched"; exit 1 }
+          Write-Host "[OK] SudoStudio.exe branding verified"
 
       # -- 11. Copy executables a la RACINE -------------------------------------
       - name: Copy executables to ROOT
@@ -170,11 +261,20 @@ jobs:
             exit /b 1
           )
 
-          if exist resources\icon.png (
-            copy resources\icon.png build\SudoStudio\logo.ico /Y
-            echo icon copied.
+          if exist _sudo-studio-source\resources\icon.ico (
+            if not exist build\SudoStudio\resources mkdir build\SudoStudio\resources
+            copy _sudo-studio-source\resources\icon.ico build\SudoStudio\resources\icon.ico /Y
+            echo icon.ico copied for installer shortcuts.
           ) else (
-            echo INFO: No icon.png found.
+            echo ERROR: icon.ico not found in Sudo-studio resources
+            exit /b 1
+          )
+          if exist _sudo-studio-source\resources\wizard-small.bmp (
+            copy _sudo-studio-source\resources\wizard-small.bmp build\SudoStudio\resources\wizard-small.bmp /Y
+            copy _sudo-studio-source\resources\installer-banner.bmp build\SudoStudio\resources\installer-banner.bmp /Y
+            echo Installer wizard bitmaps copied.
+          ) else (
+            echo INFO: No wizard bitmaps found - installer will use default wizard images.
           )
 
       # -- 12. Copy extension a RACINE\extensions\sudo-ai -----------------------
@@ -218,7 +318,7 @@ jobs:
             'Structure:',
             '- backend.exe   : API server port 5000',
             '- runtime.exe   : AI server port 6000',
-            '- VSCodium.exe  : Code editor (Sudo Studio)',
+            '- SudoStudio.exe : Code editor (Sudo Studio)',
             '- extensions\   : Sudo AI extension',
             '- data\         : Database',
             '- logs\         : Log files'
@@ -252,11 +352,11 @@ jobs:
           )
           echo OK: runtime.exe a la RACINE
 
-          if not exist build\SudoStudio\VSCodium.exe (
-            echo ERROR: VSCodium.exe manquant a la RACINE
+          if not exist build\SudoStudio\SudoStudio.exe (
+            echo ERROR: SudoStudio.exe manquant a la RACINE
             exit /b 1
           )
-          echo OK: VSCodium.exe a la RACINE
+          echo OK: SudoStudio.exe a la RACINE
 
           if not exist "build\SudoStudio\extensions\sudo-ai\extension.js" (
             echo ERROR: extension sudo-ai manquante
@@ -284,6 +384,12 @@ jobs:
             'DefaultGroupName=SudoStudio',
             'OutputDir=Output',
             'OutputBaseFilename=SudoStudio-Setup',
+            'SetupIconFile=build\SudoStudio\resources\icon.ico',
+            'UninstallDisplayIcon={app}\resources\icon.ico',
+            'VersionInfoVersion=1.0.0',
+            'VersionInfoCompany=SudoStudio',
+            'VersionInfoDescription=Sudo Studio Installer',
+            'VersionInfoProductName=Sudo Studio',
             'Compression=lzma',
             'SolidCompression=yes',
             'WizardStyle=modern',
@@ -301,12 +407,26 @@ jobs:
             'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs',
             '',
             '[Icons]',
-            'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"',
-            'Name: "{userdesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon',
+            'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\resources\icon.ico"',
+            'Name: "{userdesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\resources\icon.ico"',
             '',
             '[Run]',
             'Filename: "{app}\start.bat"; WorkingDir: "{app}"; Description: "Launch SudoStudio"; Flags: postinstall nowait skipifsilent'
           )
+          $bmpSmall = "build\SudoStudio\resources\wizard-small.bmp"
+          $bmpBanner = "build\SudoStudio\resources\installer-banner.bmp"
+          if ((Test-Path $bmpSmall) -and (Test-Path $bmpBanner)) {
+            $idx = [array]::IndexOf($lines, 'WizardStyle=modern')
+            if ($idx -lt 0) { Write-Warning 'WizardStyle line not found - skipping wizard bitmaps.' }
+            else {
+            $before = $lines[0..$idx]
+            $after = $lines[($idx+1)..($lines.Count-1)]
+            $lines = @($before; "WizardSmallImageFile=$bmpSmall"; "WizardImageFile=$bmpBanner"; $after)
+            Write-Host "Wizard bitmaps wired into installer.iss."
+            }
+          } else {
+            Write-Warning "Wizard bitmaps missing - installer will use default wizard images."
+          }
           $lines | Out-File -FilePath "installer.iss" -Encoding ASCII
           Write-Host "installer.iss created."
           Get-Content "installer.iss"
@@ -316,6 +436,10 @@ jobs:
         shell: cmd
         run: |
           "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          if errorlevel 1 (
+            echo ERROR: ISCC failed - no installer produced
+            exit /b 1
+          )
           echo Installer built.
           dir Output
 
