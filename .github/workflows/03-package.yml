@@ -67,6 +67,33 @@ jobs:
           path: build/runtime
           if_no_artifact_found: warn
 
+      # -- 4b. Freshness gate: pins must match Sudo-studio@main --------------------
+      # BACKEND_RUN_ID / RUNTIME_RUN_ID are manual pins (see env above). Without
+      # this gate, 03 would silently ship backend.exe/runtime.exe built from an
+      # OLD main (missing recent fixes). The gate FAILS when a pin is stale;
+      # fix = run workflows 01 + 02, then bump the pin to the new run ID.
+      - name: Verify artifacts are built from current main
+        shell: powershell
+        run: |
+          $repo = "juleszackaria-lab/Sudo-studio"
+          $headers = @{ Authorization = "Bearer ${{ secrets.PAT }}"; Accept = "application/vnd.github+json" }
+          $mainSha = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/commits/main" -Headers $headers).sha
+          Write-Host "[INFO] Sudo-studio main = $mainSha"
+          $stale = $false
+          foreach ($pair in @(@("BACKEND", $env:BACKEND_RUN_ID), @("RUNTIME", $env:RUNTIME_RUN_ID))) {
+            $run = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/actions/runs/$($pair[1])" -Headers $headers
+            Write-Host ("[INFO] {0}_RUN_ID={1} head_sha={2} conclusion={3}" -f $pair[0], $pair[1], $run.head_sha, $run.conclusion)
+            if ($run.conclusion -ne "success") {
+              Write-Error ("[FAIL] run {0} conclusion is '{1}' -- re-run workflow 01/02 first" -f $pair[1], $run.conclusion)
+              $stale = $true
+            } elseif ($run.head_sha -ne $mainSha) {
+              Write-Error ("[FAIL] {0}_RUN_ID={1} was built from {2}, but main is {3} -- re-run workflows 01+02, then bump the pin" -f $pair[0], $pair[1], $run.head_sha, $mainSha)
+              $stale = $true
+            }
+          }
+          if ($stale) { exit 1 }
+          Write-Host "[OK] Both artifacts are built from current main."
+
       # -- 5. Validate artifact binaries ----------------------------------------
       - name: Validate artifact binaries
         shell: powershell
@@ -301,6 +328,52 @@ jobs:
             exit /b 1
           )
 
+      # -- 12b. Fetch pinned OpenCode binary (sha256-verified) ---------------------
+      # Ported from Sudo-studio 03 (P15); destination CORRECTED to the real
+      # extension dir (extensions\sudo-ai\bin\opencode.exe, see OpenCodeDriver).
+      # Source of truth: sudo-ai-extension/opencode.manifest.json
+      # (pinnedVersion + assets.windows-x64.{url,size,sha256}).
+      # FAILS THE BUILD on size/sha256 mismatch (supply-chain gate).
+      - name: Fetch OpenCode binary (pinned + sha256)
+        shell: powershell
+        run: |
+          $manifest = Get-Content "sudo-ai-extension\opencode.manifest.json" -Raw | ConvertFrom-Json
+          $asset = $manifest.assets.'windows-x64'
+          if (-not $asset.sha256 -or $asset.sha256 -match 'COMPUTE-AT-PACKAGING') {
+            Write-Error "[FAIL] opencode.manifest.json has no windows-x64 sha256 -- refusing to ship unverified binary"
+            exit 1
+          }
+          Write-Host ("[INFO] OpenCode v{0} : {1}" -f $manifest.pinnedVersion, $asset.url)
+          $zip = Join-Path $env:TEMP $asset.file
+          Invoke-WebRequest -Uri $asset.url -OutFile $zip -UseBasicParsing
+          $got = (Get-Item $zip).Length
+          if ($got -ne $asset.size) {
+            Write-Error ("[FAIL] OpenCode size mismatch: got {0}, expected {1}" -f $got, $asset.size)
+            exit 1
+          }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $asset.sha256.ToLower()) {
+            Write-Error ("[FAIL] OpenCode sha256 mismatch: got {0}, expected {1}" -f $hash, $asset.sha256)
+            exit 1
+          }
+          Write-Host "[OK] OpenCode size + sha256 verified"
+          $tmpDir = Join-Path $env:TEMP "oc-extract"
+          if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $tmpDir -Force
+          $exe = Get-ChildItem $tmpDir -Recurse -Filter "opencode.exe" | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error ("[FAIL] opencode.exe not found inside {0}" -f $asset.file)
+            exit 1
+          }
+          $binDir = "build\SudoStudio\extensions\sudo-ai\bin"
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          Copy-Item $exe.FullName (Join-Path $binDir "opencode.exe") -Force
+          Write-Host "[OK] Final package extension bin/ contents:"
+          Get-ChildItem $binDir | Select-Object Name, Length | Format-Table
+          Write-Host "[OK] Shipped binary hash:"
+          (Get-FileHash (Join-Path $binDir "opencode.exe") -Algorithm SHA256).Hash
+          & (Join-Path $binDir "opencode.exe") --version
+
       # -- 13. Copy start.bat from Sudo-studio repo -----------------------------
       - name: Copy start.bat from Sudo-studio repo
         shell: cmd
@@ -375,6 +448,12 @@ jobs:
             exit /b 1
           )
           echo OK: extensions\sudo-ai presente
+
+          if not exist "build\SudoStudio\extensions\sudo-ai\bin\opencode.exe" (
+            echo ERROR: opencode.exe manquant dans extensions\sudo-ai\bin
+            exit /b 1
+          )
+          echo OK: extensions\sudo-ai\bin\opencode.exe present
 
           echo === TOUT EST EN PLACE - SYNCHRONISE AVEC start.bat v4.1 ===
 
