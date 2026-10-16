@@ -47,8 +47,37 @@ node license-keygen.js issue --private license-private.pem --client "Acme" \
   --edition team --seats 10 --expires 2027-10-13 --license-id LIC-ACME-001
 ```
 
+or, with a key directory and a duration:
+
+```
+node license-keygen.js generate-keypair --out keys/vendor
+node license-keygen.js issue --keydir keys/vendor --client "Acme" \
+  --edition team --seats 10 --days 365
+node license-keygen.js verify "<key>" --keydir keys/vendor
+```
+
 Deliver the printed single-line key (email is fine - it is signed, but treat
 it as a bearer credential). `--machine <hostname>` optionally binds the key.
+`--days N` counts from issuance. `--allow-expired` exists for TEST keys only
+(the tool otherwise refuses to issue an expired key).
+`verify` exits 0 only for a valid signature on a non-expired key; anything
+else exits 1 (`INVALID signature` or `REFUSED: ... expired`).
+
+Seats: positive integer. `999999` is the documented "unlimited" convention
+(the product enforces no seat ceiling beyond the stored number).
+
+## 4b. Development keys (P16, never production)
+
+- The DEVELOPMENT keypair lives OUTSIDE any repo, e.g.
+  `%USERPROFILE%\.sudo-studio-keys\dev\` on the owner's PC
+  (`license_private.pem` + `license_public.spki.b64`).
+- Its PUBLIC half is committed here at `dev-pubkey/license_public.spki.b64`
+  (fingerprint in `dev-pubkey/FINGERPRINT.txt`) so development builds can embed it:
+  `node scripts/patch-pubkey.js dev-pubkey/license_public.spki.b64 <build copies...>`
+  (operates on build copies, never on a git checkout; exactly one key per build).
+- Development-issued keys verify ONLY against development builds. They are
+  INVALID against production builds, and production keys are INVALID against
+  development builds (proven by `node test-keygen.js`, K10).
 
 ## 5. Revoke
 

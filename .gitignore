@@ -4,3 +4,6 @@ license-private*
 *-private.key
 private-keys/
 secrets/
+license_private*
+*-private.pem
+keys/
