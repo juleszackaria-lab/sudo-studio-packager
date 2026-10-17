@@ -1,0 +1,9 @@
+# P11: license private keys must NEVER be committed.
+*.private.pem
+license-private*
+*-private.key
+private-keys/
+secrets/
+license_private*
+*-private.pem
+keys/
