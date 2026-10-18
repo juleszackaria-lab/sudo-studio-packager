@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39075731421"
-  RUNTIME_RUN_ID: "39075733042"
+  BACKEND_RUN_ID: "39160621958"
+  RUNTIME_RUN_ID: "39160623796"
 
 jobs:
   build:
@@ -32,7 +32,19 @@ jobs:
           repository: juleszackaria-lab/Sudo-studio
           path: _sudo-studio-source
           ref: main
+          fetch-depth: 0
           token: ${{ secrets.PAT }}
+
+      # -- 1c. Guard against stale runtime artifact (P33-a) ------------------------
+      # Refuses a runtime-exe older than the last backend/runtime touch.
+      # Needs the full-history checkout above (fetch-depth: 0).
+      - name: Guard against stale runtime artifact (P33-a)
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File "_sudo-studio-source\scripts\ci\check-runtime-fresh.ps1" -RunId $env:RUNTIME_RUN_ID -SourceDir _sudo-studio-source
+          if ($LASTEXITCODE -ne 0) { Write-Error 'stale runtime artifact gate failed'; exit 1 }
 
       # -- 2. Copy sudo-ai-extension --------------------------------------------
       - name: Copy sudo-ai-extension into workspace
@@ -281,6 +293,15 @@ jobs:
           if ($vi.CompanyName -ne "Sudo Studio") { Write-Error "[FAIL] CompanyName not patched"; exit 1 }
           Write-Host "[OK] SudoStudio.exe branding verified"
 
+      # -- 10f. Pack-time exe-icon byte gate (P32-P4) ------------------------------
+      # Step 10e checks version STRINGS only; this checks the icon BYTES
+      # (old VSCodium 256x256 PNG gone, new Sudo PNG present).
+      - name: Verify exe icon bytes (P32-P4)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File _sudo-studio-source\scripts\ci\check-exe-icon.ps1 -ExePath build\SudoStudio\SudoStudio.exe
+          if ($LASTEXITCODE -ne 0) { Write-Error 'exe icon gate failed'; exit 1 }
+
       # -- 11. Copy executables a la RACINE -------------------------------------
       - name: Copy executables to ROOT
         shell: cmd
@@ -306,6 +327,13 @@ jobs:
             echo icon.ico copied for installer shortcuts.
           ) else (
             echo ERROR: icon.ico not found in Sudo-studio resources
+            exit /b 1
+          )
+          if exist _sudo-studio-source\resources\sudo-icon.svg (
+            copy _sudo-studio-source\resources\sudo-icon.svg build\SudoStudio\resources\sudo-icon.svg /Y
+            echo sudo-icon.svg copied for brand gate (P20/P29c4).
+          ) else (
+            echo ERROR: sudo-icon.svg not found in Sudo-studio resources
             exit /b 1
           )
           if exist _sudo-studio-source\resources\wizard-small.bmp (
@@ -356,6 +384,21 @@ jobs:
             exit 1
           }
           Write-Host ("[OK] sudo-agent copied: {0} files, {1:N0} bytes" -f $n, $bytes)
+
+      # -- 12d. Validate shipped extension container (P32-P1, validation only) ----
+      # Step 12 already copies the FRESH tree (Sudo-studio@main + npm
+      # install); only the [EXT-SHIP] container check runs here. No re-copy:
+      # the source tree has no node_modules, re-copying would ship a dead
+      # extension.
+      - name: Validate shipped extension container (P32-P1)
+        shell: powershell
+        run: |
+          $extDst = 'build\SudoStudio\extensions\sudo-ai'
+          $pkg = Get-Content "$extDst\package.json" -Raw | ConvertFrom-Json
+          $bar = @($pkg.contributes.viewsContainers.activitybar)
+          if ($bar.Count -ne 1 -or $bar[0].id -ne 'sudo-studio') { Write-Error '[EXT-SHIP] FAIL: no single sudo-studio activity container'; exit 1 }
+          Write-Host ("[EXT-SHIP] container: {0}" -f ($bar | ConvertTo-Json -Compress -Depth 5))
+          Write-Host ("[EXT-SHIP] views in sudo-studio: {0}, explorer views: {1}" -f @($pkg.contributes.views.'sudo-studio').Count, ($null -ne $pkg.contributes.views.explorer))
 
       # -- 13. Copy start.bat from Sudo-studio repo -----------------------------
       - name: Copy start.bat from Sudo-studio repo
@@ -444,6 +487,19 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
+      # -- 16b. Component manifest + refusal + brand gate (P29c4-P1) --------------
+      # AFTER the last step writing build\SudoStudio (15 validates, 16
+      # installs Inno outside it), BEFORE installer.iss (step 17).
+      - name: Build component manifest (P29c4)
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          $ssCommit = (git -C _sudo-studio-source rev-parse HEAD).Trim()
+          Write-Host "[MANIFEST] Sudo-studio checkout = $ssCommit"
+          powershell -NoProfile -ExecutionPolicy Bypass -File _sudo-studio-source\scripts\ci\build-manifest.ps1 -BuildDir build\SudoStudio -SourceDir _sudo-studio-source -SudoStudioCommit $ssCommit -BackendRunId $env:BACKEND_RUN_ID -RuntimeRunId $env:RUNTIME_RUN_ID
+          if ($LASTEXITCODE -ne 0) { Write-Error 'manifest/refusal gate failed'; exit 1 }
+
       # -- 17. Create installer.iss ---------------------------------------------
       - name: Create installer.iss
         shell: powershell
@@ -479,6 +535,18 @@ jobs:
             '',
             '[Files]',
             'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs',
+            '',
+            '[InstallDelete]',
+            'Type: filesandordirs; Name: "{app}\extensions\sudo-ai"',
+            'Type: filesandordirs; Name: "{app}\sudo-ai-extension"',
+            'Type: filesandordirs; Name: "{app}\data\extensions\*sudo*"',
+            'Type: filesandordirs; Name: "{app}\resources\app\extensions\*sudo*"',
+            'Type: files; Name: "{app}\VSCodium.exe"',
+            'Type: files; Name: "{app}\VSCodium.VisualElementsManifest.xml"',
+            'Type: files; Name: "{app}\code.ico"',
+            'Type: files; Name: "{app}\resources\win32\code.ico"',
+            'Type: files; Name: "{app}\resources\win32\code_150x150.png"',
+            'Type: files; Name: "{app}\resources\win32\code_70x70.png"',
             '',
             '[Icons]',
             'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\resources\icon.ico"',
@@ -555,3 +623,100 @@ jobs:
           name: SudoStudio-Portable
           path: Output\SudoStudio-Portable.zip
           retention-days: 30
+
+  smoke-windows:
+    name: P29+P31 smoke (Windows install + agent e2e)
+    runs-on: windows-latest
+    needs: [build]
+    timeout-minutes: 60
+    steps:
+      - name: Download installer
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          run_id: ${{ github.run_id }}
+          name: SudoStudio-Installer
+          path: smoke-dl
+      - name: Check out Sudo-studio source (smoke scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: juleszackaria-lab/Sudo-studio
+          ref: main
+          path: _sudo-studio-source
+      - name: Run installer smoke test (full)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File _sudo-studio-source\scripts\smoke\smoke-install.ps1 -InstallerPath (Join-Path (Get-Location) 'smoke-dl\SudoStudio-Setup.exe')
+      - name: Setup Node.js (agent e2e)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run agent e2e on the installed product (P31-d)
+        shell: powershell
+        run: |
+          node _sudo-studio-source\scripts\smoke\agent-e2e.js --installer (Join-Path (Get-Location) 'smoke-dl\SudoStudio-Setup.exe') --installDir (Join-Path $env:TEMP 'SudoE2E') --outDir e2e-out
+      - name: Upload smoke + e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: |
+            smoke-out/
+            e2e-out/
+
+  screenshot-windows:
+    name: P32 screenshots (dark + light, best-effort)
+    runs-on: windows-latest
+    needs: [build]
+    timeout-minutes: 30
+    steps:
+      - name: Download installer
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          run_id: ${{ github.run_id }}
+          name: SudoStudio-Installer
+          path: shot-dl
+      - name: Install + capture dark and light
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $dir = Join-Path $env:TEMP 'SudoShot'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          $ip = Start-Process -FilePath (Join-Path (Get-Location) 'shot-dl\SudoStudio-Setup.exe') -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir") -Wait -PassThru
+          if ($ip.ExitCode -ne 0) { throw 'install failed' }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $udata = Join-Path $env:TEMP 'SudoShotUser'
+          foreach ($theme in @('Default Dark Modern', 'Default Light Modern')) {
+            if (Test-Path $udata) { Remove-Item $udata -Recurse -Force }
+            $usr = Join-Path $udata 'User'; New-Item -ItemType Directory -Force -Path $usr | Out-Null
+            "{`"window.title`":`"Sudo Studio - P32`",`"workbench.colorTheme`":`"$theme`",`"workbench.startupEditor`":`"none`"}" | Set-Content (Join-Path $usr 'settings.json') -Encoding UTF8
+            $exe = Join-Path $dir 'SudoStudio.exe'
+            $p = Start-Process -FilePath $exe -ArgumentList "--extensions-dir=`"$dir\extensions`"","--user-data-dir=`"$udata`"",'--new-window','--disable-gpu' -PassThru
+            try {
+              Start-Sleep -Seconds 45
+              $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+              $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+              $g = [System.Drawing.Graphics]::FromImage($bmp)
+              $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+              $g.Dispose()
+              $shot = 'shot-out\screenshot-' + ($theme -replace '[^A-Za-z]+', '-').ToLower() + '.png'
+              New-Item -ItemType Directory -Force -Path 'shot-out' | Out-Null
+              $bmp.Save((Join-Path (Get-Location) $shot), [System.Drawing.Imaging.ImageFormat]::Png)
+              $bmp.Dispose()
+              Write-Host ("[SHOT] saved {0}" -f $shot)
+            } finally {
+              try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+            }
+          }
+      - name: Uninstall
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $un = Join-Path $env:TEMP 'SudoShot\unins000.exe'
+          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/SILENT','/NORESTART' -Wait }
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p32-screenshots
+          path: shot-out/
+          if-no-files-found: warn
