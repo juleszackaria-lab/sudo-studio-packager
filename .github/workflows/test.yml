@@ -1,10 +1,85 @@
 name: Test Runner
 
+# TEMP EXPERIMENT (2026-10-18): diagnose the silent-installer hang seen in
+# 03 run 39162429983 (smoke + screenshot jobs stuck 30-60 min inside the
+# installer -Wait, no Inno log ever written). Reproduce WITHOUT Unblock-File
+# (attempt A, expect hang) then WITH Unblock-File (attempt B, expect exit 0).
+# Uses the already-built installer artifact from that run - no rebuild.
+# REVERT to the echo step after the diagnosis.
 on:
   workflow_dispatch:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    timeout-minutes: 25
     steps:
-      - run: echo "Runner works"
+      - name: Download installer from run 39162429983
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          run_id: 39162429983
+          name: SudoStudio-Installer
+          path: exp-dl
+
+      - name: Attempt A WITHOUT Unblock-File (expect hang, 6 min cap)
+        shell: powershell
+        run: |
+          $setup = Join-Path (Get-Location) 'exp-dl\SudoStudio-Setup.exe'
+          Write-Host "[EXP-A] file present: $(Test-Path $setup)"
+          try {
+            $zone = Get-Content $setup -Stream Zone.Identifier -ErrorAction Stop | Out-String
+            Write-Host ("[EXP-A] Zone.Identifier PRESENT: {0}" -f ($zone.Trim() -replace '\s+', ' '))
+          } catch { Write-Host '[EXP-A] Zone.Identifier ABSENT' }
+          $dir = Join-Path $env:TEMP 'ExpA'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          $log = Join-Path (Get-Location) 'exp-a-inno.log'
+          $p = Start-Process -FilePath $setup -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir"),("/LOG=$log") -PassThru
+          Write-Host ("[EXP-A] launched pid={0}, waiting up to 360 s..." -f $p.Id)
+          Start-Sleep -Seconds 60
+          $still = Get-Process -Id $p.Id -ErrorAction SilentlyContinue
+          Write-Host ("[EXP-A] after 60 s: {0}" -f ($(if ($still) { 'STILL RUNNING (hung?)' } else { 'exited' })))
+          $deadline = (Get-Date).AddSeconds(300)
+          while ((Get-Date) -lt $deadline -and -not $p.HasExited) { Start-Sleep -Seconds 10 }
+          if (-not $p.HasExited) {
+            Write-Host '[EXP-A] RESULT: HUNG (killed after 360 s)'
+            try { Stop-Process -Id $p.Id -Force } catch {}
+          } else {
+            Write-Host ("[EXP-A] RESULT: exited code={0}" -f $p.ExitCode)
+          }
+          Write-Host ("[EXP-A] inno log written: {0}" -f (Test-Path $log))
+
+      - name: Attempt B WITH Unblock-File (expect exit 0, 8 min cap)
+        shell: powershell
+        run: |
+          $setup = Join-Path (Get-Location) 'exp-dl\SudoStudio-Setup.exe'
+          Unblock-File -Path $setup
+          Write-Host '[EXP-B] Unblock-File done'
+          try {
+            Get-Content $setup -Stream Zone.Identifier -ErrorAction Stop | Out-Null
+            Write-Host '[EXP-B] Zone.Identifier STILL PRESENT (unexpected)'
+          } catch { Write-Host '[EXP-B] Zone.Identifier absent (good)' }
+          $dir = Join-Path $env:TEMP 'ExpB'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          $log = Join-Path (Get-Location) 'exp-b-inno.log'
+          $p = Start-Process -FilePath $setup -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir"),("/LOG=$log") -PassThru
+          $deadline = (Get-Date).AddSeconds(480)
+          while ((Get-Date) -lt $deadline -and -not $p.HasExited) { Start-Sleep -Seconds 10 }
+          if (-not $p.HasExited) {
+            Write-Host '[EXP-B] RESULT: HUNG (killed after 480 s)'
+            try { Stop-Process -Id $p.Id -Force } catch {}
+          } else {
+            Write-Host ("[EXP-B] RESULT: exited code={0}" -f $p.ExitCode)
+          }
+          Write-Host ("[EXP-B] SudoStudio.exe present: {0}" -f (Test-Path (Join-Path $dir 'SudoStudio.exe')))
+          $un = Join-Path $dir 'unins000.exe'
+          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/SILENT','/NORESTART' -Wait }
+
+      - name: Upload experiment logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp-installer-hang
+          path: |
+            exp-a-inno.log
+            exp-b-inno.log
+          if-no-files-found: warn
