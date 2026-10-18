@@ -1,38 +1,10 @@
 name: Test Runner
 
-# TEMP EXPERIMENT 4 (2026-10-18): why does start.bat's monitor poll never
-# match? Instrument the exact poll line + a fake editor process. REVERT after.
 on:
   workflow_dispatch:
 
 jobs:
   test:
-    runs-on: windows-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
     steps:
-      - name: Pure PowerShell logic test (no batch quoting)
-        shell: powershell
-        run: |
-          $env:V_EXT = 'C:\X\extensions'
-          $fake = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c "title FAKEEDITOR --extensions-dir C:\X\extensions & timeout /t 120"' -WindowStyle Hidden -PassThru
-          Start-Sleep -Seconds 3
-          $all = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*FAKEEDITOR*' })
-          Write-Host ("[EXP4] fake editor procs: {0}" -f $all.Count)
-          foreach ($p in $all) { Write-Host ("[EXP4] cmdline: {0}" -f $p.CommandLine) }
-          $p1 = '--extensions' + '-dir'
-          Write-Host ("[EXP4] p1=[{0}] V_EXT=[{1}]" -f $p1, $env:V_EXT)
-          $h1 = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ('*' + $p1 + '*') })
-          Write-Host ("[EXP4] P1-only matches: {0}" -f $h1.Count)
-          $h2 = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ('*' + $p1 + '*') -and $_.CommandLine -like ('*' + $env:V_EXT + '*') })
-          Write-Host ("[EXP4] P1+P2 matches: {0}" -f $h2.Count)
-          try { Stop-Process -Id $fake.Id -Force } catch {}
-
-      - name: Exact batch one-liner shape (quoting check)
-        shell: cmd
-        run: |
-          set "V_EXT=C:\X\extensions"
-          start "" cmd /c "title FAKEEDITOR2 --extensions-dir C:\X\extensions & timeout /t 60"
-          powershell -NoProfile -WindowStyle Hidden -Command "try { $p1 = '--extensions' + '-dir'; Write-Host P1EQUALS=$p1; Write-Host VEQUALS=$env:V_EXT; $hit = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ('*' + $p1 + '*') -and $_.CommandLine -like ('*' + $env:V_EXT + '*') }; if ($hit) { exit 0 } else { exit 1 } } catch { Write-Host POLL-ERROR; exit 2 }"
-          echo POLL-EXIT=%errorlevel%
-          taskkill /F /FI "WINDOWTITLE eq FAKEEDITOR2*" >nul 2>&1
-          echo done
+      - run: echo "Runner works"
