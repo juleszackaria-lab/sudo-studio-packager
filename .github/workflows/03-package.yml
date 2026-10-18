@@ -525,7 +525,6 @@ jobs:
             'WizardStyle=modern',
             'DisableProgramGroupPage=yes',
             'PrivilegesRequired=admin',
-            'PrivilegesRequiredOverridesAllowed=dialog',
             '',
             '[Languages]',
             'Name: "english"; MessagesFile: "compiler:Default.isl"',
