@@ -1,8 +1,10 @@
 name: Test Runner
 
-# TEMP EXPERIMENT 2 (2026-10-18): does the 17/10 installer (WITHOUT the new
-# [InstallDelete] section) also hang silently? If OLD works, capture
-# forensics on the NEW installer hang. No rebuild. REVERT after diagnosis.
+# TEMP EXPERIMENT 3 (2026-10-18): the hang predates [InstallDelete] (exp2:
+# 17/10 installer also hangs, no Inno log). Suspect: the elevation override
+# dialog (PrivilegesRequiredOverridesAllowed=dialog) shown even under
+# /SILENT. Build 2 ISS variants from the portable tree and test each with a
+# 3-min cap. REVERT after diagnosis.
 on:
   workflow_dispatch:
 
@@ -11,85 +13,126 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
-      - name: Download 17/10 installer (no InstallDelete)
-        uses: dawidd6/action-download-artifact@v5
-        with:
-          run_id: 39076854816
-          name: SudoStudio-Installer
-          path: exp2-dl-old
+      - name: Check job elevation state
+        shell: powershell
+        run: |
+          whoami /user
+          $il = (whoami /groups | Select-String 'S-1-16-').Line.Trim()
+          Write-Host ("[ELEV] mandatory level: {0}" -f $il)
+          $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $p = New-Object Security.Principal.WindowsPrincipal($id)
+          Write-Host ("[ELEV] IsInRole(Administrator): {0}" -f $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 
-      - name: Download NEW installer (with InstallDelete)
+      - name: Download NEW installer (control) + portable tree
         uses: dawidd6/action-download-artifact@v5
         with:
           run_id: 39162429983
           name: SudoStudio-Installer
-          path: exp2-dl-new
+          path: exp3-dl
 
-      - name: Run OLD installer silent (6 min cap)
+      - name: Download portable zip
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          run_id: 39162429983
+          name: SudoStudio-Portable
+          path: exp3-dl
+
+      - name: Control - NEW installer hangs (3 min cap)
         shell: powershell
         run: |
-          $setup = Join-Path (Get-Location) 'exp2-dl-old\SudoStudio-Setup.exe'
-          Write-Host ("[OLD] file present: {0}" -f (Test-Path $setup))
-          $dir = Join-Path $env:TEMP 'ExpOld'
+          $setup = Join-Path (Get-Location) 'exp3-dl\SudoStudio-Setup.exe'
+          $dir = Join-Path $env:TEMP 'ExpCtrl'
           if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
-          $log = Join-Path (Get-Location) 'exp2-old-inno.log'
-          $p = Start-Process -FilePath $setup -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir"),("/LOG=$log") -PassThru
-          $deadline = (Get-Date).AddSeconds(360)
+          $p = Start-Process -FilePath $setup -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir"),'/LOG=exp3-ctrl.log' -PassThru
+          $deadline = (Get-Date).AddSeconds(180)
           while ((Get-Date) -lt $deadline -and -not $p.HasExited) { Start-Sleep -Seconds 10 }
-          if (-not $p.HasExited) {
-            Write-Host '[OLD] RESULT: HUNG (killed after 360 s)'
-            try { Stop-Process -Id $p.Id -Force } catch {}
-          } else {
-            Write-Host ("[OLD] RESULT: exited code={0}" -f $p.ExitCode)
-          }
-          Write-Host ("[OLD] SudoStudio.exe present: {0}" -f (Test-Path (Join-Path $dir 'SudoStudio.exe')))
-          Write-Host ("[OLD] inno log written: {0}" -f (Test-Path $log))
+          if (-not $p.HasExited) { Write-Host '[CTRL] RESULT: HUNG (killed)'; try { Stop-Process -Id $p.Id -Force } catch {} }
+          else { Write-Host ("[CTRL] RESULT: exited code={0}" -f $p.ExitCode) }
 
-      - name: Forensics on NEW installer (only if OLD worked)
+      - name: Extract portable tree + install Inno
         shell: powershell
         run: |
-          if (-not (Test-Path (Join-Path $env:TEMP 'ExpOld\SudoStudio.exe'))) {
-            Write-Host '[FORENSIC] OLD did not install - nothing to compare, skip'
-            exit 0
+          Expand-Archive (Join-Path (Get-Location) 'exp3-dl\SudoStudio-Portable.zip') build\SudoStudio -Force
+          Write-Host ("[PREP] tree ready: {0}" -f (Test-Path 'build\SudoStudio\SudoStudio.exe'))
+          choco install innosetup -y --no-progress
+
+      - name: Write ISS variants (B minus OverridesAllowed, C lowest)
+        shell: powershell
+        run: |
+          $common = @(
+            '[Setup]',
+            'AppName=SudoStudio',
+            'AppVersion=1.0.0',
+            'AppPublisher=SudoStudio',
+            'AppPublisherURL=https://github.com/juleszackaria-lab/Sudo-studio',
+            'DefaultDirName={autopf}\SudoStudio',
+            'DefaultGroupName=SudoStudio',
+            'OutputDir=OutputExp',
+            'SetupIconFile=build\SudoStudio\resources\icon.ico',
+            'UninstallDisplayIcon={app}\resources\icon.ico',
+            'Compression=lzma',
+            'SolidCompression=yes',
+            'WizardStyle=modern',
+            'DisableProgramGroupPage=yes',
+            'PrivilegesRequired=admin',
+            '',
+            '[Languages]',
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            '',
+            '[Tasks]',
+            'Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"',
+            '',
+            '[Files]',
+            'Source: "build\SudoStudio\*"; DestDir: "{app}"; Flags: recursesubdirs',
+            '',
+            '[InstallDelete]',
+            'Type: filesandordirs; Name: "{app}\extensions\sudo-ai"',
+            '',
+            '[Icons]',
+            'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\resources\icon.ico"',
+            'Name: "{userdesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\resources\icon.ico"',
+            '',
+            '[Run]',
+            'Filename: "{app}\start.bat"; WorkingDir: "{app}"; Description: "Launch SudoStudio"; Flags: postinstall nowait skipifsilent'
+          )
+          $b = @($common[0..14]; 'OutputBaseFilename=B-Setup'; $common[16..($common.Count-1)])
+          $b | Out-File -FilePath 'expB.iss' -Encoding ASCII
+          $c = @($common[0..13]; 'PrivilegesRequired=lowest'; 'OutputBaseFilename=C-Setup'; $common[16..($common.Count-1)])
+          $c | Out-File -FilePath 'expC.iss' -Encoding ASCII
+          Write-Host '[PREP] variants written'
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' expB.iss
+          if ($LASTEXITCODE -ne 0) { Write-Error 'ISCC-B failed'; exit 1 }
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' expC.iss
+          if ($LASTEXITCODE -ne 0) { Write-Error 'ISCC-C failed'; exit 1 }
+          Write-Host '[PREP] both installers compiled'
+
+      - name: Test variant B then C (3 min cap each)
+        shell: powershell
+        run: |
+          foreach ($v in @('B', 'C')) {
+            $setup = Join-Path (Get-Location) ("OutputExp\{0}-Setup.exe" -f $v)
+            $dir = Join-Path $env:TEMP ("Exp{0}" -f $v)
+            if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+            $p = Start-Process -FilePath $setup -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir"),("/LOG=exp3-{0}.log" -f $v) -PassThru
+            $deadline = (Get-Date).AddSeconds(180)
+            while ((Get-Date) -lt $deadline -and -not $p.HasExited) { Start-Sleep -Seconds 10 }
+            if (-not $p.HasExited) {
+              Write-Host ("[{0}] RESULT: HUNG (killed)" -f $v)
+              try { Stop-Process -Id $p.Id -Force } catch {}
+            } else {
+              Write-Host ("[{0}] RESULT: exited code={1} exe={2}" -f $v, $p.ExitCode, (Test-Path (Join-Path $dir 'SudoStudio.exe')))
+            }
+            $un = Join-Path $dir 'unins000.exe'
+            if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/SILENT','/NORESTART' -Wait }
           }
-          $setup = Join-Path (Get-Location) 'exp2-dl-new\SudoStudio-Setup.exe'
-          $dir = Join-Path $env:TEMP 'ExpNew'
-          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
-          $log = Join-Path (Get-Location) 'exp2-new-inno.log'
-          $p = Start-Process -FilePath $setup -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir"),("/LOG=$log") -PassThru
-          Start-Sleep -Seconds 90
-          if ($p.HasExited) {
-            Write-Host ("[FORENSIC] NEW exited by itself code={0} (no hang?!)" -f $p.ExitCode)
-          } else {
-            $proc = Get-Process -Id $p.Id -ErrorAction SilentlyContinue
-            Write-Host ("[FORENSIC] NEW still running: cpu={0}s responding={1} title=[{2}]" -f $proc.CPU, $proc.Responding, $proc.MainWindowTitle)
-            Get-CimInstance Win32_Process -Filter ("ParentProcessId={0}" -f $p.Id) | ForEach-Object { Write-Host ("[FORENSIC] child: {0} pid={1}" -f $_.Name, $_.ProcessId) }
-            Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | ForEach-Object { Write-Host ("[FORENSIC] window: {0} title=[{1}]" -f $_.ProcessName, $_.MainWindowTitle) }
-            $tmp = Get-ChildItem (Join-Path $env:TEMP 'is-*.tmp') -Directory -ErrorAction SilentlyContinue
-            Write-Host ("[FORENSIC] is-*.tmp dirs: {0}" -f (($tmp | ForEach-Object { $_.Name }) -join ','))
-          }
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-          $g.Dispose()
-          $bmp.Save((Join-Path (Get-Location) 'exp2-forensic.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-          $bmp.Dispose()
-          Write-Host '[FORENSIC] screenshot saved'
-          try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
-          $un = Join-Path $dir 'unins000.exe'
-          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/SILENT','/NORESTART' -Wait }
-          $unOld = Join-Path $env:TEMP 'ExpOld\unins000.exe'
-          if (Test-Path $unOld) { Start-Process -FilePath $unOld -ArgumentList '/SILENT','/NORESTART' -Wait }
 
       - name: Upload experiment logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: exp2-old-installer
+          name: exp3-variants
           path: |
-            exp2-old-inno.log
-            exp2-new-inno.log
-            exp2-forensic.png
+            exp3-ctrl.log
+            exp3-B.log
+            exp3-C.log
           if-no-files-found: warn
