@@ -331,7 +331,7 @@ jobs:
           )
           if exist _sudo-studio-source\resources\sudo-icon.svg (
             copy _sudo-studio-source\resources\sudo-icon.svg build\SudoStudio\resources\sudo-icon.svg /Y
-            echo sudo-icon.svg copied for brand gate (P20/P29c4).
+            echo sudo-icon.svg copied for brand gate P20-P29c4.
           ) else (
             echo ERROR: sudo-icon.svg not found in Sudo-studio resources
             exit /b 1
