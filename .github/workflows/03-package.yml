@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39264710589"
-  RUNTIME_RUN_ID: "39264713456"
+  BACKEND_RUN_ID: "39270907278"
+  RUNTIME_RUN_ID: "39270911743"
 
 jobs:
   build:
@@ -884,6 +884,14 @@ jobs:
           Remove-Item 'C:\ptest (x86)' -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item (Join-Path $env:TEMP 'SudoPanelUser') -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item (Join-Path $env:TEMP 'SudoPanelUser2') -Recurse -Force -ErrorAction SilentlyContinue
+      - name: Collect startup.log on failure
+        if: failure()
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path (Join-Path (Get-Location) 'panel-out2') | Out-Null
+          $logf = Join-Path $env:LOCALAPPDATA 'SudoStudio\logs\startup.log'
+          if (Test-Path $logf) { Copy-Item $logf (Join-Path (Get-Location) 'panel-out2\startup.log') -Force; Get-Content $logf -Tail 40 }
+          else { 'NO startup.log at ' + $logf | Out-Host }
       - name: Upload panel report
         if: always()
         uses: actions/upload-artifact@v4
