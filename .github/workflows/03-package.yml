@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39200539766"
-  RUNTIME_RUN_ID: "39200541554"
+  BACKEND_RUN_ID: "39204245873"
+  RUNTIME_RUN_ID: "39204247555"
 
 jobs:
   build:
@@ -790,7 +790,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22  # panel-render needs global WebSocket (Node 21+)
       - name: Install + backend + live copy + render (main path)
         shell: powershell
         run: |
