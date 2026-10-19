@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39254120732"
-  RUNTIME_RUN_ID: "39254123891"
+  BACKEND_RUN_ID: "39260030557"
+  RUNTIME_RUN_ID: "39260033604"
 
 jobs:
   build:
@@ -792,6 +792,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22  # panel-render needs global WebSocket (Node 21+)
+      - name: Install CI enterprise license (gated panels)
+        shell: powershell
+        env:
+          LICENSE_CI_KEY: ${{ secrets.LICENSE_CI_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LICENSE_CI_KEY)) { throw 'LICENSE_CI_KEY secret missing (repo Settings > Secrets > Actions)' }
+          $licDir = Join-Path $env:USERPROFILE '.sudo_studio'
+          New-Item -ItemType Directory -Force -Path $licDir | Out-Null
+          @{ key = $env:LICENSE_CI_KEY.Trim() } | ConvertTo-Json -Compress | Set-Content (Join-Path $licDir 'license.json') -Encoding ascii
+          $env:SUDO_STUDIO_HOME = $env:USERPROFILE
+          node -e "const lic=require('./_sudo-studio-source/sudo-ai-extension/src/license/license');const s=lic.getStatus({});console.log('license state='+s.state+' edition='+s.edition);if(s.state!=='active'||['team','enterprise'].indexOf(s.edition)===-1){console.error('license reason: '+s.reason);process.exit(1)}"
+          if ($LASTEXITCODE -ne 0) { throw 'CI license invalid (see log)' }
       - name: Install + backend + live copy + render (main path)
         shell: powershell
         run: |
