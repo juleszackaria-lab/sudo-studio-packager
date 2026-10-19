@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39204245873"
-  RUNTIME_RUN_ID: "39204247555"
+  BACKEND_RUN_ID: "39207431286"
+  RUNTIME_RUN_ID: "39207433633"
 
 jobs:
   build:
@@ -770,10 +770,11 @@ jobs:
           path: shot-out/
           if-no-files-found: warn
   panel-windows:
-    name: P35 panel render gate (15 panels, hidden launch)
+    name: P35 panel render (15 panels, best-effort)
     runs-on: windows-latest
     needs: [build]
     timeout-minutes: 40
+    continue-on-error: true  # user decision 19/10: runs + reports, never fails packaging
     steps:
       - name: Download installer
         uses: dawidd6/action-download-artifact@v5
