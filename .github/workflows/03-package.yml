@@ -151,8 +151,6 @@ jobs:
           if not exist build mkdir build
           if not exist build\SudoStudio mkdir build\SudoStudio
           if not exist build\SudoStudio\extensions mkdir build\SudoStudio\extensions
-          if not exist build\SudoStudio\data mkdir build\SudoStudio\data
-          if not exist build\SudoStudio\logs mkdir build\SudoStudio\logs
           if not exist Output mkdir Output
           echo Folders created - structure synchronisee avec start.bat v4.1
 
@@ -205,7 +203,8 @@ jobs:
         run: |
           $scriptPath = "_sudo-studio-source\scripts\customize-vscodium.ps1"
           if (Test-Path $scriptPath) {
-            & $scriptPath -VSCodiumDir "build\SudoStudio"
+            $ssCommit10 = (git -C _sudo-studio-source rev-parse HEAD).Trim()
+            & $scriptPath -VSCodiumDir "build\SudoStudio" -SudoStudioCommit $ssCommit10
             Write-Host "VSCodium customized to Sudo Studio branding."
           } else {
             Write-Error "customize-vscodium.ps1 not found - refusing to ship an unbranded build."
@@ -413,6 +412,25 @@ jobs:
             exit /b 1
           )
 
+      # -- 13b. Copy launch_hidden.vbs + verify-installed.ps1 (P35-d/P36-d) -----
+      - name: Copy launch files to ROOT
+        shell: cmd
+        run: |
+          if exist _sudo-studio-source\launch_hidden.vbs (
+            copy _sudo-studio-source\launch_hidden.vbs build\SudoStudio\launch_hidden.vbs /Y
+            echo launch_hidden.vbs copied to ROOT.
+          ) else (
+            echo ERROR: launch_hidden.vbs not found in Sudo-studio repo
+            exit /b 1
+          )
+          if exist _sudo-studio-source\scripts\verify\verify-installed.ps1 (
+            copy _sudo-studio-source\scripts\verify\verify-installed.ps1 build\SudoStudio\verify-installed.ps1 /Y
+            echo verify-installed.ps1 copied to ROOT.
+          ) else (
+            echo ERROR: verify-installed.ps1 not found in Sudo-studio repo
+            exit /b 1
+          )
+
       # -- 14. Create README.txt ------------------------------------------------
       - name: Create README.txt
         shell: powershell
@@ -481,6 +499,18 @@ jobs:
           )
           echo OK: sudo-agent\src\server.js present
 
+          if not exist build\SudoStudio\launch_hidden.vbs (
+            echo ERROR: launch_hidden.vbs manquant a la RACINE
+            exit /b 1
+          )
+          echo OK: launch_hidden.vbs a la RACINE
+
+          if not exist build\SudoStudio\verify-installed.ps1 (
+            echo ERROR: verify-installed.ps1 manquant a la RACINE
+            exit /b 1
+          )
+          echo OK: verify-installed.ps1 a la RACINE
+
           echo === TOUT EST EN PLACE - SYNCHRONISE AVEC start.bat v4.1 ===
 
       # -- 16. Install Inno Setup -----------------------------------------------
@@ -511,7 +541,7 @@ jobs:
             'AppPublisher=SudoStudio',
             'AppPublisherURL=https://github.com/juleszackaria-lab/Sudo-studio',
             'DefaultDirName={localappdata}\Programs\SudoStudio',
-            'DefaultGroupName=SudoStudio',
+            'DefaultGroupName=Sudo Studio',
             'OutputDir=Output',
             'OutputBaseFilename=SudoStudio-Setup',
             'SetupIconFile=build\SudoStudio\resources\icon.ico',
@@ -548,11 +578,11 @@ jobs:
             'Type: files; Name: "{app}\resources\win32\code_70x70.png"',
             '',
             '[Icons]',
-            'Name: "{group}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\resources\icon.ico"',
-            'Name: "{userdesktop}\SudoStudio"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\resources\icon.ico"',
+            'Name: "{group}\Sudo Studio"; Filename: "wscript.exe"; Parameters: """{app}\launch_hidden.vbs"" ""{app}\start.bat"""; WorkingDir: "{app}"; IconFilename: "{app}\resources\icon.ico"',
+            'Name: "{userdesktop}\Sudo Studio"; Filename: "wscript.exe"; Parameters: """{app}\launch_hidden.vbs"" ""{app}\start.bat"""; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\resources\icon.ico"',
             '',
             '[Run]',
-            'Filename: "{app}\start.bat"; WorkingDir: "{app}"; Description: "Launch SudoStudio"; Flags: postinstall nowait skipifsilent'
+            'Filename: "wscript.exe"; Parameters: """{app}\launch_hidden.vbs"" ""{app}\start.bat"""; WorkingDir: "{app}"; Description: "Launch Sudo Studio"; Flags: postinstall nowait skipifsilent'
           )
           $bmpSmall = "build\SudoStudio\resources\wizard-small.bmp"
           $bmpBanner = "build\SudoStudio\resources\installer-banner.bmp"
@@ -653,6 +683,21 @@ jobs:
         shell: powershell
         run: |
           node _sudo-studio-source\scripts\smoke\agent-e2e.js --installer (Join-Path (Get-Location) 'smoke-dl\SudoStudio-Setup.exe') --installDir (Join-Path $env:TEMP 'SudoE2E') --outDir e2e-out
+      - name: Run P36 matrix gate on a fresh install
+        shell: powershell
+        run: |
+          $mdir = Join-Path $env:TEMP 'SudoMatrix'
+          if (Test-Path $mdir) { Remove-Item $mdir -Recurse -Force }
+          $ip = Start-Process -FilePath (Join-Path (Get-Location) 'smoke-dl\SudoStudio-Setup.exe') -ArgumentList '/SILENT','/NORESTART',("/DIR=$mdir") -Wait -PassThru
+          if ($ip.ExitCode -ne 0) { throw 'matrix reinstall failed' }
+          node _sudo-studio-source\scripts\verify\run-matrix.js --install $mdir --smoke-log (Join-Path (Get-Location) 'smoke-out\summary.txt') --out matrix-result.json
+          if ($LASTEXITCODE -ne 0) { throw 'P36 matrix gate FAILED (see matrix-result.json)' }
+      - name: Uninstall matrix copy
+        if: always()
+        shell: powershell
+        run: |
+          $un = Join-Path $env:TEMP 'SudoMatrix\unins000.exe'
+          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/SILENT','/NORESTART' -Wait }
       - name: Upload smoke + e2e logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -661,6 +706,7 @@ jobs:
           path: |
             smoke-out/
             e2e-out/
+            matrix-result.json
 
   screenshot-windows:
     name: P32 screenshots (dark + light, best-effort)
@@ -683,13 +729,17 @@ jobs:
           $ip = Start-Process -FilePath (Join-Path (Get-Location) 'shot-dl\SudoStudio-Setup.exe') -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir") -Wait -PassThru
           if ($ip.ExitCode -ne 0) { throw 'install failed' }
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $live = Join-Path $env:TEMP 'SudoShotLive'
+          if (Test-Path $live) { Remove-Item $live -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $live | Out-Null
+          Copy-Item (Join-Path $dir 'extensions\sudo-ai') (Join-Path $live 'sudo-ai') -Recurse -Force
           $udata = Join-Path $env:TEMP 'SudoShotUser'
           foreach ($theme in @('Default Dark Modern', 'Default Light Modern')) {
             if (Test-Path $udata) { Remove-Item $udata -Recurse -Force }
             $usr = Join-Path $udata 'User'; New-Item -ItemType Directory -Force -Path $usr | Out-Null
             "{`"window.title`":`"Sudo Studio - P32`",`"workbench.colorTheme`":`"$theme`",`"workbench.startupEditor`":`"none`"}" | Set-Content (Join-Path $usr 'settings.json') -Encoding UTF8
             $exe = Join-Path $dir 'SudoStudio.exe'
-            $p = Start-Process -FilePath $exe -ArgumentList "--extensions-dir=`"$dir\extensions`"","--user-data-dir=`"$udata`"",'--new-window','--disable-gpu' -PassThru
+            $p = Start-Process -FilePath $exe -ArgumentList "--extensions-dir=`"$live`"","--user-data-dir=`"$udata`"",'--new-window','--disable-gpu' -PassThru
             try {
               Start-Sleep -Seconds 45
               $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -718,4 +768,115 @@ jobs:
         with:
           name: p32-screenshots
           path: shot-out/
+          if-no-files-found: warn
+  panel-windows:
+    name: P35 panel render gate (15 panels, hidden launch)
+    runs-on: windows-latest
+    needs: [build]
+    timeout-minutes: 40
+    steps:
+      - name: Download installer
+        uses: dawidd6/action-download-artifact@v5
+        with:
+          run_id: ${{ github.run_id }}
+          name: SudoStudio-Installer
+          path: panel-dl
+      - name: Check out Sudo-studio source (panel script)
+        uses: actions/checkout@v4
+        with:
+          repository: juleszackaria-lab/Sudo-studio
+          ref: main
+          path: _sudo-studio-source
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install + backend + live copy + render (main path)
+        shell: powershell
+        run: |
+          $dir = Join-Path $env:TEMP 'SudoPanel'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          $ip = Start-Process -FilePath (Join-Path (Get-Location) 'panel-dl\SudoStudio-Setup.exe') -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir") -Wait -PassThru
+          if ($ip.ExitCode -ne 0) { throw 'panel install failed' }
+          $be = Start-Process -FilePath (Join-Path $dir 'backend.exe') -WorkingDirectory $dir -WindowStyle Hidden -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try { $r = Invoke-WebRequest 'http://127.0.0.1:5000/api/system/health' -TimeoutSec 3 -UseBasicParsing; if ($r.StatusCode -lt 500) { $ok = $true; break } } catch {}
+            Start-Sleep -Seconds 2
+          }
+          if (-not $ok) { throw 'backend :5000 never came up' }
+          $live = Join-Path $env:LOCALAPPDATA 'SudoStudio\extensions'
+          if (Test-Path $live) { Remove-Item $live -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $live | Out-Null
+          Copy-Item (Join-Path $dir 'extensions\sudo-ai') (Join-Path $live 'sudo-ai') -Recurse -Force
+          $udata = Join-Path $env:TEMP 'SudoPanelUser'
+          if (Test-Path $udata) { Remove-Item $udata -Recurse -Force }
+          node _sudo-studio-source\scripts\ci\panel-render-test.js --install-dir $dir --live-dir (Join-Path $live 'sudo-ai') --user-data-dir $udata --out-dir panel-out --label main
+          if ($LASTEXITCODE -ne 0) { throw 'panel render (main path) failed' }
+      - name: Render on paren path (P35-c)
+        shell: powershell
+        run: |
+          $dir2 = 'C:\ptest (x86)\SudoStudio'
+          if (Test-Path 'C:\ptest (x86)') { Remove-Item 'C:\ptest (x86)' -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $dir2 | Out-Null
+          Copy-Item (Join-Path $env:TEMP 'SudoPanel\*') $dir2 -Recurse -Force
+          $udata2 = Join-Path $env:TEMP 'SudoPanelUser2'
+          if (Test-Path $udata2) { Remove-Item $udata2 -Recurse -Force }
+          node _sudo-studio-source\scripts\ci\panel-render-test.js --install-dir $dir2 --live-dir (Join-Path $env:LOCALAPPDATA 'SudoStudio\extensions\sudo-ai') --user-data-dir $udata2 --out-dir panel-out2 --debug-port 9232 --label paren --skip-shortcuts
+          if ($LASTEXITCODE -ne 0) { throw 'panel render (paren path) failed' }
+      - name: start.bat PHASE 5 + hidden launch (P35-c/d)
+        shell: powershell
+        run: |
+          $dir2 = 'C:\ptest (x86)\SudoStudio'
+          $logf = Join-Path $env:LOCALAPPDATA 'SudoStudio\logs\startup.log'
+          $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'start.bat' -WorkingDirectory $dir2 -WindowStyle Minimized -PassThru
+          $ph5 = $false
+          for ($i = 0; $i -lt 150; $i++) {
+            Start-Sleep -Seconds 2
+            if ((Test-Path $logf) -and (Select-String -Path $logf -Pattern '\[PHASE 5\]' -Quiet)) { $ph5 = $true; break }
+          }
+          try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+          if (-not $ph5) { throw 'start.bat never reached PHASE 5 (see startup.log)' }
+          if (Select-String -Path $logf -Pattern '\[FATAL\]' -Quiet) { throw 'start.bat logged [FATAL]' }
+          Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          $before = @(Get-Process -Name 'cmd' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { $_.Id })
+          Start-Process -FilePath 'wscript.exe' -ArgumentList "`"$dir2\launch_hidden.vbs`"", "`"$dir2\start.bat`"" -WorkingDirectory $dir2
+          $titled = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            $w = Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'Sudo Studio*' }
+            if ($w) { $titled = $true; break }
+          }
+          if (-not $titled) { throw 'no editor window titled Sudo Studio after hidden launch' }
+          $newCon = @(Get-Process -Name 'cmd' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $before -notcontains $_.Id })
+          if ($newCon.Count -gt 0) { throw 'a visible console window appeared during hidden launch' }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap($b.Width, $b.Height)
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $g.Dispose()
+          $bmp.Save((Join-Path (Get-Location) 'panel-out2\desktop-hidden.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $bmp.Dispose()
+          Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+      - name: Uninstall (panel + paren copies)
+        if: always()
+        shell: powershell
+        run: |
+          Get-Process -Name 'backend','runtime','SudoStudio' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $un = Join-Path $env:TEMP 'SudoPanel\unins000.exe'
+          if (Test-Path $un) { Start-Process -FilePath $un -ArgumentList '/SILENT','/NORESTART' -Wait }
+          Remove-Item (Join-Path $env:TEMP 'SudoPanel') -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item 'C:\ptest (x86)' -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $env:TEMP 'SudoPanelUser') -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $env:TEMP 'SudoPanelUser2') -Recurse -Force -ErrorAction SilentlyContinue
+      - name: Upload panel report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-render
+          path: |
+            panel-out/
+            panel-out2/
           if-no-files-found: warn
