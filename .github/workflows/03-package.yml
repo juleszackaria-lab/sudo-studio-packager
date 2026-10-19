@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39211524642"
-  RUNTIME_RUN_ID: "39211526460"
+  BACKEND_RUN_ID: "39250018704"
+  RUNTIME_RUN_ID: "39250021855"
 
 jobs:
   build:
@@ -812,7 +812,7 @@ jobs:
           Copy-Item (Join-Path $dir 'extensions\sudo-ai') (Join-Path $live 'sudo-ai') -Recurse -Force
           $udata = Join-Path $env:TEMP 'SudoPanelUser'
           if (Test-Path $udata) { Remove-Item $udata -Recurse -Force }
-          node _sudo-studio-source\scripts\ci\panel-render-test.js --install-dir $dir --live-dir (Join-Path $live 'sudo-ai') --user-data-dir $udata --out-dir panel-out --label main
+          node _sudo-studio-source\scripts\ci\panel-render-test.js --install-dir $dir --live-dir $live --user-data-dir $udata --out-dir panel-out --label main
           if ($LASTEXITCODE -ne 0) { throw 'panel render (main path) failed' }
       - name: Render on paren path (P35-c)
         shell: powershell
@@ -823,7 +823,7 @@ jobs:
           Copy-Item (Join-Path $env:TEMP 'SudoPanel\*') $dir2 -Recurse -Force
           $udata2 = Join-Path $env:TEMP 'SudoPanelUser2'
           if (Test-Path $udata2) { Remove-Item $udata2 -Recurse -Force }
-          node _sudo-studio-source\scripts\ci\panel-render-test.js --install-dir $dir2 --live-dir (Join-Path $env:LOCALAPPDATA 'SudoStudio\extensions\sudo-ai') --user-data-dir $udata2 --out-dir panel-out2 --debug-port 9232 --label paren --skip-shortcuts
+          node _sudo-studio-source\scripts\ci\panel-render-test.js --install-dir $dir2 --live-dir (Join-Path $env:LOCALAPPDATA 'SudoStudio\extensions') --user-data-dir $udata2 --out-dir panel-out2 --debug-port 9232 --label paren --skip-shortcuts
           if ($LASTEXITCODE -ne 0) { throw 'panel render (paren path) failed' }
       - name: start.bat PHASE 5 + hidden launch (P35-c/d)
         shell: powershell
