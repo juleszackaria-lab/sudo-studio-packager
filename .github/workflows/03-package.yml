@@ -842,14 +842,25 @@ jobs:
         run: |
           $dir2 = 'C:\ptest (x86)\SudoStudio'
           $logf = Join-Path $env:LOCALAPPDATA 'SudoStudio\logs\startup.log'
-          $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'start.bat' -WorkingDirectory $dir2 -WindowStyle Minimized -PassThru
+          Get-ChildItem $dir2 -File | Select-Object -First 40 Name, Length | Out-Host
+          if (-not (Test-Path (Join-Path $dir2 'start.bat'))) { throw 'start.bat missing in paren copy' }
+          $capdir = Join-Path (Get-Location) 'panel-out2'
+          New-Item -ItemType Directory -Force -Path $capdir | Out-Null
+          $cap = Join-Path $capdir 'phase5-stdout.log'
+          # <nul keeps any pause from hanging; stdout captured for forensics.
+          $p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', ('start.bat <nul > "' + $cap + '" 2>&1') -WorkingDirectory $dir2 -WindowStyle Minimized -PassThru
           $ph5 = $false
           for ($i = 0; $i -lt 150; $i++) {
             Start-Sleep -Seconds 2
             if ((Test-Path $logf) -and (Select-String -Path $logf -Pattern '\[PHASE 5\]' -Quiet)) { $ph5 = $true; break }
           }
+          $p.Refresh()
+          if ($p.HasExited) { ('launcher EXITED early with code ' + $p.ExitCode) | Out-Host }
+          else { 'launcher still running after wait (hung or slow)' | Out-Host }
+          if (Test-Path $logf) { Copy-Item $logf (Join-Path $capdir 'startup-phase5.log') -Force }
+          if (Test-Path $cap) { Get-Content $cap -Tail 30 | Out-Host } else { 'NO phase5-stdout.log captured' | Out-Host }
           try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
-          if (-not $ph5) { throw 'start.bat never reached PHASE 5 (see startup.log)' }
+          if (-not $ph5) { throw 'start.bat never reached PHASE 5 (see phase5-stdout.log + startup-phase5.log)' }
           if (Select-String -Path $logf -Pattern '\[FATAL\]' -Quiet) { throw 'start.bat logged [FATAL]' }
           Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 3
