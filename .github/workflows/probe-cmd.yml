@@ -25,7 +25,7 @@ jobs:
         run: |
           $dir = 'C:\ptest (x86)\Probe'
           if (Test-Path 'C:\ptest (x86)') { Remove-Item 'C:\ptest (x86)' -Recurse -Force }
-          $ip = Start-Process -FilePath (Join-Path (Get-Location) 'probe-dl\SudoStudio-Setup.exe') -ArgumentList '/SILENT','/NORESTART',("/DIR=$dir") -Wait -PassThru
+          $ip = Start-Process -FilePath (Join-Path (Get-Location) 'probe-dl\SudoStudio-Setup.exe') -ArgumentList '/SILENT','/NORESTART',('"/DIR=' + $dir + '"') -Wait -PassThru
           if ($ip.ExitCode -ne 0) { throw 'probe install failed' }
           if (-not (Test-Path (Join-Path $dir 'start.bat'))) { throw 'start.bat missing after install' }
           if (-not (Test-Path (Join-Path $dir 'SudoStudio.exe'))) { throw 'exe missing after install' }
