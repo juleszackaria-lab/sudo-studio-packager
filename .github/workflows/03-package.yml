@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "39965628584"
-  RUNTIME_RUN_ID: "39965631423"
+  BACKEND_RUN_ID: "40780879387"
+  RUNTIME_RUN_ID: "40780881969"
 
 jobs:
   build:
@@ -134,7 +134,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # P46: panel-render-test needs global WebSocket (21+)
 
       # -- 7. Install extension dependencies ------------------------------------
       - name: Install extension node_modules
@@ -628,6 +628,21 @@ jobs:
           if ($setup.Length -lt 5MB) {
             Write-Warning "Installer looks too small ($sizeMB MB). May be incomplete."
           }
+
+      # -- 19b. P46 delivery gate (BLOCKS publish on any failure) ------
+      - name: P46 delivery gate (install + test installed product)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File "_sudo-studio-source\\scripts\\verify\\p46-gate.ps1" -InstallerPath "Output\\SudoStudio-Setup.exe" -SourceDir "_sudo-studio-source" -OutDir "gate-out"
+          if ($LASTEXITCODE -ne 0) { Write-Error 'P46 gate FAILED - publish blocked'; exit 1 }
+      - name: Upload gate diagnostics (publish blocked)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic
+          path: gate-out/
+          retention-days: 30
+          if-no-files-found: warn
 
       # -- 20. Upload installer artifact ----------------------------------------
       - name: Upload installer artifact
