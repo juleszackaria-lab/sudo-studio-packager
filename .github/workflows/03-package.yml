@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "40780879387"
-  RUNTIME_RUN_ID: "40780881969"
+  BACKEND_RUN_ID: "40792718190"
+  RUNTIME_RUN_ID: "40792720757"
 
 jobs:
   build:
@@ -628,6 +628,22 @@ jobs:
           if ($setup.Length -lt 5MB) {
             Write-Warning "Installer looks too small ($sizeMB MB). May be incomplete."
           }
+
+      # -- 19a. CI enterprise license so the gate renders gated panels ----
+      # (mirror of the panel-windows job step: devops/security/duplication/
+      # central call licCore.guardFeature and open nothing without it).
+      - name: Install CI enterprise license (gated panels)
+        shell: powershell
+        env:
+          LICENSE_CI_KEY: ${{ secrets.LICENSE_CI_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LICENSE_CI_KEY)) { throw 'LICENSE_CI_KEY secret missing (repo Settings > Secrets > Actions)' }
+          $licDir = Join-Path $env:USERPROFILE '.sudo_studio'
+          New-Item -ItemType Directory -Force -Path $licDir | Out-Null
+          @{ key = $env:LICENSE_CI_KEY.Trim() } | ConvertTo-Json -Compress | Set-Content (Join-Path $licDir 'license.json') -Encoding ascii
+          $env:SUDO_STUDIO_HOME = $env:USERPROFILE
+          node -e "const lic=require('./_sudo-studio-source/sudo-ai-extension/src/license/license');const s=lic.getStatus({});console.log('license state='+s.state+' edition='+s.edition);if(s.state!=='active'||['team','enterprise'].indexOf(s.edition)===-1){console.error('license reason: '+s.reason);process.exit(1)}"
+          if ($LASTEXITCODE -ne 0) { throw 'CI license invalid (see log)' }
 
       # -- 19b. P46 delivery gate (BLOCKS publish on any failure) ------
       - name: P46 delivery gate (install + test installed product)
