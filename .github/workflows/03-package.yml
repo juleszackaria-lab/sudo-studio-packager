@@ -7,8 +7,8 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "40792718190"
-  RUNTIME_RUN_ID: "40792720757"
+  BACKEND_RUN_ID: "40877694711"
+  RUNTIME_RUN_ID: "40877697758"
 
 jobs:
   build:
@@ -894,13 +894,24 @@ jobs:
           if (-not $ph5) { throw 'start.bat never reached PHASE 5 (see phase5-stdout.log + startup-phase5.log)' }
           if (Select-String -Path $logf -Pattern '\[FATAL\]' -Quiet) { throw 'start.bat logged [FATAL]' }
           Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 3
+          # P35 race fix: wait for the DIRECT-run editor to REALLY exit before the
+          # hidden launch, else the new instance single-instance-forwards into the
+          # dying zombie and exits without any window (poll then fails forever).
+          $dead = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            if (-not (Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue)) { $dead = $true; break }
+          }
+          if (-not $dead) { throw 'direct-run editor would not die before hidden launch' }
           $before = @(Get-Process -Name 'cmd' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { $_.Id })
+          $tHidden = Get-Date
           Start-Process -FilePath 'wscript.exe' -ArgumentList "`"$dir2\launch_hidden.vbs`"", "`"$dir2\start.bat`"" -WorkingDirectory $dir2
           $titled = $false
           for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Seconds 2
-            $w = Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'Sudo Studio*' }
+            $w = Get-Process -Name 'SudoStudio' -ErrorAction SilentlyContinue | Where-Object {
+              try { $_.StartTime -gt $tHidden -and $_.MainWindowTitle -like 'Sudo Studio*' } catch { $false }
+            }
             if ($w) { $titled = $true; break }
           }
           if (-not $titled) { throw 'no editor window titled Sudo Studio after hidden launch' }
