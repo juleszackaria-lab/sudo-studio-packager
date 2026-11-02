@@ -7,8 +7,10 @@ on:
     tags: ['v*']
 
 env:
-  BACKEND_RUN_ID: "41208609846"
-  RUNTIME_RUN_ID: "41208611220"
+  # P54 pins: workflows 01 + 02 ran on Sudo-studio main f769e63
+  # (page Agent Extensions). Bump both ids whenever main moves.
+  BACKEND_RUN_ID: "41538856009"
+  RUNTIME_RUN_ID: "41538858887"
 
 jobs:
   build:
