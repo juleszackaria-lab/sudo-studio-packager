@@ -1,0 +1,715 @@
+name: 04 - Package Linux
+
+# Linux twin of 03-package.yml.
+#
+# Same logic, same proof rules, native toolchain:
+#   guard (pins) -> build backend (pkg) -> build runtime (PyInstaller + 2
+#   llama.cpp variants) -> assemble portable bundle -> delivery gates
+#   (P29/P31 style) -> TOTAL Linux functional test on the INSTALLED bundle
+#   (scripts/ci/linux-e2e-test.js --bundle, xvfb launch test).
+#
+# Differences vs 03 (documented on purpose):
+#  - Windows reuses artifacts built by workflows 01/02. There is no Linux
+#    twin of 01/02, so this workflow BUILDS the Linux backend and runtime
+#    from source, on Linux, from the same commit as the pinned 01/02 runs.
+#  - No single pin to drift: the commit is TAKEN FROM the pinned run IDs, and
+#    the guard refuses to start unless both runs are green and share one SHA.
+#  - Windows-only branding steps (rcedit / ICO / PowerShell) are replaced by
+#    the product.json patch; the Windows gates remain the reference for the
+#    icon work.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/04-package-linux.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SUDO_STUDIO_REPO: juleszackaria-lab/Sudo-studio
+  # Reference runs (workflows 01 + 02 of Sudo-studio). They define the commit
+  # this Linux build is made from. Bump these two ids whenever main moves.
+  BACKEND_RUN_ID: "42398078068"
+  RUNTIME_RUN_ID: "42398080215"
+  EDITOR_VERSION: "1.97.2.25045"
+  NODE_VERSION: "18"
+  PYTHON_VERSION: "3.11"
+  MIN_SIZE_BYTES: "500000"
+
+jobs:
+  # ──────────────────────────────────────────────────── GUARD (cheap, first) ──
+  guard:
+    name: Guard - pins are green and agree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.pins.outputs.sha }}
+    steps:
+      - name: Check pinned runs (01 + 02)
+        id: pins
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$SUDO_STUDIO_REPO"
+          main_sha=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" "$api/commits/main" | jq -r .sha)
+          echo "[INFO] Sudo-studio main = $main_sha"
+          sha=""
+          fail=0
+          for pair in "BACKEND:$BACKEND_RUN_ID" "RUNTIME:$RUNTIME_RUN_ID"; do
+            name=${pair%%:*}; id=${pair##*:}
+            run=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" "$api/actions/runs/$id")
+            rsha=$(echo "$run" | jq -r .head_sha)
+            concl=$(echo "$run" | jq -r .conclusion)
+            branch=$(echo "$run" | jq -r .head_branch)
+            echo "[INFO] ${name}_RUN_ID=$id status=$concl head_sha=$rsha branch=$branch"
+            if [ "$concl" != "success" ]; then
+              echo "[FAIL] run $id conclusion is '$concl' -- re-run workflow 01/02 first"
+              fail=1
+            fi
+            if [ -z "$sha" ]; then
+              sha="$rsha"
+            elif [ "$rsha" != "$sha" ]; then
+              echo "[FAIL] runs disagree: $sha vs $rsha -- both must build the same commit"
+              fail=1
+            fi
+          done
+          if [ -n "$sha" ] && [ "$sha" != "$main_sha" ]; then
+            echo "[FAIL] pinned runs are built from $sha but main is $main_sha"
+            echo "       re-run workflows 01 + 02 on main, then bump BACKEND_RUN_ID/RUNTIME_RUN_ID"
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "[OK] both runs are green on main ($sha)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "commit under test: ${{ steps.pins.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| run | id |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 01 backend | $BACKEND_RUN_ID |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 02 runtime | $RUNTIME_RUN_ID |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────── BACKEND (Node -> Linux bin) ──
+  build-backend-linux:
+    name: Build backend (linux-x64)
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Sudo-studio (pinned commit)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SUDO_STUDIO_REPO }}
+          path: src
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: src/backend
+        run: npm install --no-audit --no-fund
+
+      - name: Run P30 selftest suite (source)
+        working-directory: src/backend
+        run: node tests/test-p30-backend.js
+
+      - name: Install pkg
+        run: npm install -g pkg
+
+      - name: Add bin + pkg config to package.json
+        working-directory: src/backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          p.bin = 'server.js';
+          if (!p.pkg) {
+            p.pkg = {
+              targets: ['node18-linux-x64'],
+              scripts: [
+                'routes/**/*.js', 'middleware/**/*.js', 'models/**/*.js',
+                'services/**/*.js', 'utils/**/*.js', 'ai/**/*.js',
+                'doctor/**/*.js', 'installers/**/*.js', 'config/**/*.js',
+              ],
+              assets: ['version.json'],
+            };
+          }
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
+          console.log('[OK] bin + pkg config set (node18-linux-x64)');
+          JS
+
+      - name: Build backend (linux-x64)
+        working-directory: src/backend
+        run: pkg package.json --targets node18-linux-x64 --output backend
+
+      - name: Gate - backend binary
+        working-directory: src/backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f backend || { echo '[FAIL] backend not produced'; exit 1; }
+          chmod +x backend
+          size=$(stat -c%s backend)
+          echo "[OK] backend = $((size/1024/1024)) MB"
+          test "$size" -gt "$MIN_SIZE_BYTES" || { echo "[FAIL] backend is a placeholder ($size bytes)"; exit 1; }
+          file backend || true
+          ./backend --selftest
+
+      - name: Upload backend-linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-linux
+          path: src/backend/backend
+          if-no-files-found: error
+          retention-days: 15
+
+  # ───────────────────────────────── RUNTIME (Python -> PyInstaller, Linux) ──
+  build-runtime-linux:
+    name: Build runtime (linux-x64)
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout Sudo-studio (pinned commit)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SUDO_STUDIO_REPO }}
+          path: src
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        working-directory: src/backend/runtime
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller scikit-build-core cmake ninja
+
+      # llama.cpp is built TWICE from source, exactly like workflow 02:
+      #   compat = no AVX/AVX2/AVX512/FMA/F16C/BMI2 (any x86-64 box)
+      #   avx2   = AVX/AVX2/FMA/F16C/BMI2 (modern CPUs)
+      # Each tree is self-contained (own numpy/diskcache/jinja2), so the frozen
+      # binary needs no hidden imports for llama_cpp.
+      - name: Build llama-cpp compat variant (no SIMD)
+        working-directory: src/backend/runtime
+        env:
+          CMAKE_ARGS: >-
+            -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_AVX512=OFF
+            -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF
+        run: >
+          pip install --target llama_variants/compat --no-binary llama-cpp-python
+          --no-cache-dir --no-build-isolation llama-cpp-python==0.3.9
+
+      - name: Build llama-cpp avx2 variant
+        working-directory: src/backend/runtime
+        env:
+          CMAKE_ARGS: >-
+            -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON
+            -DGGML_F16C=ON -DGGML_BMI2=ON
+        run: >
+          pip install --target llama_variants/avx2 --no-binary llama-cpp-python
+          --no-cache-dir --no-build-isolation llama-cpp-python==0.3.9
+
+      - name: Gate - compat variant reports no SIMD-ISA feature
+        working-directory: src/backend/runtime
+        shell: python
+        run: |
+          import subprocess, sys
+          p = subprocess.run(
+              [sys.executable, '-c',
+               "import sys; sys.path.insert(0, 'llama_variants/compat'); "
+               "import llama_cpp; "
+               "print('[VARIANT] file:', llama_cpp.__file__); "
+               "print(llama_cpp.llama_print_system_info().decode('utf-8'))"],
+              capture_output=True, text=True)
+          print(p.stdout)
+          print(p.stderr, file=sys.stderr)
+          assert p.returncode == 0, 'compat variant import/system_info failed'
+          for bad in ('AVX', 'BMI2', 'FMA', 'F16C'):
+              assert bad not in p.stdout, 'compat must not report ' + bad + ': ' + p.stdout.strip()
+          print('[GATE] compat variant OK: no AVX/BMI2/FMA/F16C')
+
+      - name: Gate - avx2 variant reports AVX2
+        working-directory: src/backend/runtime
+        shell: python
+        run: |
+          import subprocess, sys
+          p = subprocess.run(
+              [sys.executable, '-c',
+               "import sys; sys.path.insert(0, 'llama_variants/avx2'); "
+               "import llama_cpp; "
+               "print('[VARIANT] file:', llama_cpp.__file__); "
+               "print(llama_cpp.llama_print_system_info().decode('utf-8'))"],
+              capture_output=True, text=True)
+          print(p.stdout)
+          print(p.stderr, file=sys.stderr)
+          assert p.returncode == 0, 'avx2 variant import/system_info failed'
+          for good in ('AVX = 1', 'AVX2 = 1', 'BMI2 = 1'):
+              assert good in p.stdout, 'avx2 must report ' + good + ': ' + p.stdout.strip()
+          print('[GATE] avx2 variant OK: AVX/AVX2/BMI2 present')
+
+      - name: Build runtime executable
+        working-directory: src/backend/runtime
+        run: >
+          pyinstaller
+          --onefile
+          --name server
+          --add-data "llama_variants:llama_variants"
+          --hidden-import huggingface_hub
+          --hidden-import huggingface_hub.file_download
+          server.enterprise.py
+
+      - name: Gate - runtime binary
+        working-directory: src/backend/runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=dist/server
+          test -f "$exe" || { echo '[FAIL] dist/server not produced'; exit 1; }
+          chmod +x "$exe"
+          size=$(stat -c%s "$exe")
+          echo "[OK] runtime = $((size/1024/1024)) MB"
+          test "$size" -gt "$MIN_SIZE_BYTES" || { echo "[FAIL] runtime is a placeholder ($size bytes)"; exit 1; }
+          file "$exe" || true
+
+      # P33(b) twin: boot the frozen binary, the FIRST journal line must be the
+      # P21 session header, and the header must carry the build commit.
+      - name: Gate - P21 journal header in the frozen runtime
+        working-directory: src/backend/runtime
+        shell: bash
+        env:
+          SUDO_BUILD_COMMIT: ${{ needs.guard.outputs.sha }}
+        run: |
+          set -euo pipefail
+          logs="$RUNNER_TEMP/rt-journal-gate"
+          rm -rf "$logs"; mkdir -p "$logs"
+          export SUDO_STUDIO_LOGS="$logs"
+          ./dist/server --no-auto-download --port 6001 > "$logs/stdout.txt" 2>&1 &
+          rp=$!
+          log="$logs/runtime.log"
+          for i in $(seq 1 80); do [ -f "$log" ] && break; sleep 3; done
+          test -f "$log" || { echo '[FAIL] runtime.log never appeared'; tail -40 "$logs/stdout.txt" || true; kill $rp 2>/dev/null || true; exit 1; }
+          txt=""
+          for i in $(seq 1 40); do
+            txt=$(cat "$log")
+            case "$txt" in *'# === session start ==='*) break ;; esac
+            sleep 3
+          done
+          kill $rp 2>/dev/null || true
+          echo '--- journal head ---'; head -8 "$log"
+          case "$txt" in *'# === session start ==='*) : ;; *) echo '[FAIL] no P21 session header in runtime.log'; exit 1 ;; esac
+          first=$(printf '%s\n' "$txt" | grep -v '^$' | head -1)
+          case "$first" in *'# === session start ==='*) : ;; *) echo "[FAIL] header is not the first line: $first"; exit 1 ;; esac
+          for f in '# build:' '# cpu:' '# ramMB:' '# ports:' '| model:'; do
+            case "$txt" in *"$f"*) : ;; *) echo "[FAIL] header field missing: $f"; exit 1 ;; esac
+          done
+          case "$txt" in *"$SUDO_BUILD_COMMIT"*) : ;; *) echo '[FAIL] build commit missing from header'; exit 1 ;; esac
+          echo '[GATE] P21 header OK: first line + build commit + cpu/ram/model/ports'
+
+      - name: Gate - runtime answers /health
+        working-directory: src/backend/runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./dist/server --port 6002 > rt.log 2>&1 &
+          rp=$!
+          ok=0
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:6002/health || echo 000)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 1
+          done
+          kill $rp 2>/dev/null || true
+          tail -20 rt.log || true
+          test "$ok" -eq 1 || { echo '[FAIL] runtime /health never answered 200'; exit 1; }
+          echo '[OK] runtime /health = 200'
+
+      - name: Upload runtime-linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-linux
+          path: src/backend/runtime/dist/server
+          if-no-files-found: error
+          retention-days: 15
+
+  # ──────────────────────────────────────────────── ASSEMBLE + SOURCE TESTS ──
+  package-linux:
+    name: Assemble SudoStudio-Linux
+    needs: [guard, build-backend-linux, build-runtime-linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Sudo-studio (pinned commit)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SUDO_STUDIO_REPO }}
+          path: src
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-linux
+          path: in/backend
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-linux
+          path: in/runtime
+
+      # -- Source regression suites, same set the Windows gates rely on -------
+      # Every one of these is platform-neutral and was verified green on Linux
+      # before being added here.
+      - name: Install backend + extension dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd src/backend && npm install --no-audit --no-fund)
+          (cd src/sudo-ai-extension && npm install --production --no-audit --no-fund)
+
+      - name: Suites - agent mode, journals, extensions
+        working-directory: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          run() { echo "=== $* ==="; node "$@"; }
+          run backend/tests/test-p4-agent-ui.js
+          run backend/tests/test-p13-agent-ui.js
+          run backend/tests/test-p21-logs.js
+          run backend/tests/test-p24-agent-core.js
+          run backend/tests/test-p25-agent-tools.js
+          run backend/tests/test-p26-agent-loop.js
+          run backend/tests/test-p27-extension.js
+          run backend/tests/test-p39-always-answer.js
+          run backend/tests/test-p43-context.js
+          run backend/tests/test-p48-titlebar-runtime.js
+          run backend/tests/test-p49-agent-acts.js
+          run backend/tests/test-p50-agent-caps.js
+          run backend/tests/test-p52-agent-pause.js
+          run backend/tests/test-p52-orch.js
+          run backend/tests/test-p53-agent-robust.js
+          run backend/tests/test-p54-agent-extensions.js
+          run backend/tests/test-p5-chat.js
+          run backend/tests/test-p8-sandbox.js
+
+      - name: Suites - P55/P56/P57/P58
+        working-directory: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          run() { echo "=== $* ==="; node "$@"; }
+          run scripts/ci/test-p55-recipes.js
+          run scripts/ci/test-p56-spec.js
+          run scripts/ci/test-p56-panel.js
+          run scripts/ci/test-p57-extensions.js
+          run scripts/ci/test-p57-panel.js
+          run scripts/ci/test-p58-logs.js
+
+      - name: Suites - Linux total functionality (source mode)
+        working-directory: src
+        run: node scripts/ci/linux-e2e-test.js --source --json --out "$GITHUB_WORKSPACE/reports/linux-e2e-source.json"
+
+      # -- Editor -------------------------------------------------------------
+      - name: Download VSCodium (linux-x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/VSCodium/vscodium/releases/download/$EDITOR_VERSION/VSCodium-linux-x64-$EDITOR_VERSION.tar.gz"
+          echo "[INFO] editor: $url"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -L -r 0-0 "$url")
+          echo "[INFO] HEAD range probe: $code"
+          test "$code" = "206" || test "$code" = "200" || { echo '[FAIL] VSCodium tarball not reachable at the pinned version'; exit 1; }
+          curl -fL "$url" -o vscodium.tar.gz
+          size=$(stat -c%s vscodium.tar.gz)
+          echo "[OK] vscodium.tar.gz = $((size/1024/1024)) MB"
+          test "$size" -gt 100000000 || { echo '[FAIL] editor tarball too small'; exit 1; }
+
+      - name: Assemble SudoStudio-Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=SudoStudio-Linux
+          rm -rf "$OUT"; mkdir -p "$OUT"
+          tar -xzf vscodium.tar.gz -C "$OUT"
+
+          # extension (same payload as the Windows package)
+          mkdir -p "$OUT/extensions"
+          cp -a src/sudo-ai-extension "$OUT/extensions/sudo-ai"
+
+          # agent server code (stdlib only, runs on the editor's Node)
+          mkdir -p "$OUT/sudo-agent"
+          cp -a src/sudo-agent/src "$OUT/sudo-agent/src"
+          cp -a src/sudo-agent/package.json "$OUT/sudo-agent/package.json"
+          [ -d src/sudo-agent/skills ] && cp -a src/sudo-agent/skills "$OUT/sudo-agent/skills" || true
+
+          # real Linux binaries built above
+          mkdir -p "$OUT/backend/runtime"
+          install -m 0755 in/backend/backend "$OUT/backend/backend"
+          install -m 0755 in/runtime/server "$OUT/backend/runtime/server"
+
+          # branding: minimal, safe product.json patch (no PowerShell on Linux)
+          node - <<'JS'
+          const fs = require('fs');
+          const p = 'SudoStudio-Linux/resources/app/product.json';
+          const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+          const before = { nameShort: j.nameShort, nameLong: j.nameLong };
+          j.nameShort = 'Sudo Studio';
+          j.nameLong = 'Sudo Studio';
+          if (Object.prototype.hasOwnProperty.call(j, 'win32VersionedUpdate')) j.win32VersionedUpdate = false;
+          fs.writeFileSync(p, JSON.stringify(j, null, '\t'));
+          console.log('[OK] product.json branding:', JSON.stringify(before), '-> Sudo Studio');
+          console.log('[INFO] applicationName kept as-is (Linux binary lookup):', j.applicationName);
+          JS
+
+          # portable launcher
+          cat > "$OUT/start.sh" <<'SH'
+          #!/usr/bin/env bash
+          # SudoStudio portable launcher (Linux). Starts the local backend, then
+          # the editor with the bundled extension. No install, no root: every
+          # write stays inside this folder (data/).
+          set -euo pipefail
+          HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export SUDO_STUDIO_HOME="${SUDO_STUDIO_HOME:-$HERE/data}"
+          mkdir -p "$SUDO_STUDIO_HOME/logs"
+          PORT="${SUDO_STUDIO_BACKEND_PORT:-5000}"
+          export PORT
+          if ! curl -sf -m 1 -o /dev/null "http://127.0.0.1:$PORT/api/system/health"; then
+            "$HERE/backend/backend" > "$SUDO_STUDIO_HOME/logs/backend.log" 2>&1 &
+            echo $! > "$SUDO_STUDIO_HOME/logs/backend.pid"
+            for _ in $(seq 1 40); do
+              curl -sf -m 1 -o /dev/null "http://127.0.0.1:$PORT/api/system/health" && break
+              sleep 1
+            done
+          fi
+          BIN=""
+          for c in "$HERE/bin/codium" "$HERE/bin/sudostudio" "$HERE/sudostudio"; do
+            [ -x "$c" ] && BIN="$c" && break
+          done
+          if [ -z "$BIN" ]; then echo "editor not found next to $HERE" >&2; exit 1; fi
+          exec "$BIN" --extensions-dir "$HERE/data/extensions" \
+                      --user-data-dir "$HERE/data/user" "$@"
+          SH
+          chmod 0755 "$OUT/start.sh"
+          chmod 0755 "$OUT/backend/backend" "$OUT/backend/runtime/server"
+
+          {
+            echo "SudoStudio Linux portable"
+            echo "commit: ${{ needs.guard.outputs.sha }}"
+            echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner: $(. /etc/os-release; echo "$PRETTY_NAME")"
+            echo "node: $(node --version) / python: $(python3 --version 2>&1)"
+            echo "backend: $(du -h "$OUT/backend/backend" | cut -f1)"
+            echo "runtime: $(du -h "$OUT/backend/runtime/server" | cut -f1)"
+            echo "editor version: $EDITOR_VERSION"
+            echo "backend run id: $BACKEND_RUN_ID / runtime run id: $RUNTIME_RUN_ID"
+          } > "$OUT/BUILD-INFO.txt"
+
+          tar -czf SudoStudio-Linux-portable.tar.gz "$OUT"
+          sha256sum SudoStudio-Linux-portable.tar.gz > SudoStudio-Linux-portable.tar.gz.sha256
+          du -h SudoStudio-Linux-portable.tar.gz
+          cat "$OUT/BUILD-INFO.txt"
+
+      - name: Gate - bundle layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=SudoStudio-Linux
+          test -x "$OUT/backend/backend"               || { echo '[FAIL] backend missing/not executable'; exit 1; }
+          test -x "$OUT/backend/runtime/server"        || { echo '[FAIL] runtime missing/not executable'; exit 1; }
+          test -f "$OUT/extensions/sudo-ai/extension.js" || { echo '[FAIL] extension missing'; exit 1; }
+          test -d "$OUT/extensions/sudo-ai/node_modules" || { echo '[FAIL] extension node_modules missing'; exit 1; }
+          test -f "$OUT/sudo-agent/src/server.js"      || { echo '[FAIL] agent server missing'; exit 1; }
+          test -x "$OUT/start.sh"                      || { echo '[FAIL] start.sh missing/not executable'; exit 1; }
+          if [ ! -x "$OUT/bin/codium" ] && [ ! -x "$OUT/bin/sudostudio" ]; then
+            echo '[FAIL] editor binary missing in bin/'; ls -la "$OUT" "$OUT/bin" 2>/dev/null || true; exit 1
+          fi
+          echo '[OK] bundle layout complete'
+
+      - name: Upload portable + reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Linux-Portable
+          path: |
+            SudoStudio-Linux-portable.tar.gz
+            SudoStudio-Linux-portable.tar.gz.sha256
+            reports/linux-e2e-source.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # ──────────────────────────────────────── DELIVERY GATES (P29/P31 twin) ──
+  linux-delivery-gates:
+    name: P29+P31 Linux delivery gate
+    needs: package-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SudoStudio-Linux-Portable
+          path: dl
+
+      - name: Verify checksum and extract like a user
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dl
+          sha256sum -c SudoStudio-Linux-portable.tar.gz.sha256
+          tar -xzf SudoStudio-Linux-portable.tar.gz
+          cat SudoStudio-Linux/BUILD-INFO.txt
+          # a user copies the folder somewhere else: exec bits must survive
+          dest="$RUNNER_TEMP/user-home/SudoStudio"
+          rm -rf "$dest"; mkdir -p "$(dirname "$dest")"
+          cp -a SudoStudio-Linux "$dest"
+          cd "$dest"
+          test -x start.sh
+          test -x backend/backend
+          test -x backend/runtime/server
+          file backend/backend backend/runtime/server
+          echo "[OK] plain copy keeps the bundle runnable"
+
+      - name: Gate - backend serves /api/system/health after a plain copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/user-home/SudoStudio"
+          PORT=5310 ./backend/backend > "$RUNNER_TEMP/backend.log" 2>&1 &
+          bp=$!
+          ok=0
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5310/api/system/health || echo 000)
+            if [ "$code" -ge 200 ] 2>/dev/null && [ "$code" -lt 500 ] 2>/dev/null; then ok=1; break; fi
+            sleep 1
+          done
+          tail -30 "$RUNNER_TEMP/backend.log" || true
+          kill $bp 2>/dev/null || true
+          test "$ok" -eq 1 || { echo '[FAIL] packaged backend does not answer'; exit 1; }
+          echo '[OK] packaged backend answers /api/system/health'
+
+      - name: Gate - runtime serves /health after a plain copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/user-home/SudoStudio/backend/runtime"
+          ./server --port 5311 > "$RUNNER_TEMP/runtime.log" 2>&1 &
+          rp=$!
+          ok=0
+          for i in $(seq 1 120); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5311/health || echo 000)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 1
+          done
+          tail -30 "$RUNNER_TEMP/runtime.log" || true
+          kill $rp 2>/dev/null || true
+          test "$ok" -eq 1 || { echo '[FAIL] packaged runtime /health failed'; exit 1; }
+          echo '[OK] packaged runtime answers /health'
+
+      - name: Gate - portable launcher starts the whole stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SUDO_STUDIO_BACKEND_PORT=5312
+          export SUDO_STUDIO_HOME="$RUNNER_TEMP/user-home/data"
+          cd "$RUNNER_TEMP/user-home/SudoStudio"
+          # start.sh must reach the editor. The editor needs a display: use xvfb.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          set +e
+          timeout 60 xvfb-run -a ./start.sh --version > "$RUNNER_TEMP/launcher.log" 2>&1
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/launcher.log" || true
+          # 0 = printed the version; 124 = editor stayed up (also fine)
+          case "$rc" in
+            0|124) echo "[OK] launcher ran (exit $rc)" ;;
+            *) echo "[FAIL] launcher failed (exit $rc)"; exit 1 ;;
+          esac
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$SUDO_STUDIO_BACKEND_PORT/api/system/health" || echo 000)
+          echo "[INFO] backend via launcher: $code"
+
+  # ──────────────────────────── TOTAL LINUX FUNCTIONAL TEST (INSTALLED) ──
+  linux-total-test:
+    name: Linux total functionality (installed bundle)
+    needs: [guard, linux-delivery-gates]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Sudo-studio (test harness only)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SUDO_STUDIO_REPO }}
+          path: src
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: SudoStudio-Linux-Portable
+          path: dl
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Extract the delivered artifact
+        run: tar -xzf dl/SudoStudio-Linux-portable.tar.gz
+
+      # The point of the whole workflow: everything must work on Linux, from
+      # the SHIPPED files only (no source tree, no dev server).
+      - name: TOTAL Linux test - structure, binaries, services, agent mode
+        working-directory: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/ci/linux-e2e-test.js --bundle "$GITHUB_WORKSPACE/SudoStudio-Linux" \
+            --json --out "$GITHUB_WORKSPACE/reports/linux-e2e-bundle.json"
+
+      - name: P47 - installed editor boots, extension registers (xvfb)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          chmod +x SudoStudio-Linux/bin/codium 2>/dev/null || true
+          out="$GITHUB_WORKSPACE/reports/p47"
+          mkdir -p "$out"
+          set +e
+          xvfb-run -a node src/scripts/ci/p47-installed-launch-test.js \
+            --editor "$GITHUB_WORKSPACE/SudoStudio-Linux/bin/codium" \
+            --install-dir "$GITHUB_WORKSPACE/SudoStudio-Linux" \
+            --timeout-s 45 --out-dir "$out"
+          rc=$?
+          set -e
+          echo "[INFO] p47 exit code: $rc"
+          if [ "$rc" = "2" ]; then echo '[FAIL] editor launch test inconclusive'; exit 1; fi
+          exit "$rc"
+
+      - name: Upload Linux test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-total-test-report
+          path: reports/**
+          if-no-files-found: warn
+          retention-days: 30
