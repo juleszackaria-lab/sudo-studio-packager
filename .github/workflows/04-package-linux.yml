@@ -508,7 +508,24 @@ jobs:
             [ -x "$c" ] && BIN="$c" && break
           done
           if [ -z "$BIN" ]; then echo "editor not found next to $HERE" >&2; exit 1; fi
-          exec "$BIN" --extensions-dir "$HERE/data/extensions" \
+          # Electron needs its SUID helper to be root-owned + setuid. A portable
+          # tarball cannot ship that (extraction drops setuid), and asking the
+          # user for sudo would defeat "portable". Detect it and disable the
+          # sandbox only when it really is unusable.
+          SANDBOX_FLAG=""
+          SB="$(dirname "$(readlink -f "$BIN")")/../chrome-sandbox"
+          if [ -f "$SB" ]; then
+            SB_OWNER=$(stat -c %u "$SB" 2>/dev/null || echo 0)
+            SB_MODE=$(stat -c %a "$SB" 2>/dev/null || echo 000)
+            case "$SB_MODE" in
+              4[0-7][0-7][0-7]) [ "$SB_OWNER" = "0" ] || SANDBOX_FLAG="--no-sandbox" ;;
+              *) SANDBOX_FLAG="--no-sandbox" ;;
+            esac
+          else
+            SANDBOX_FLAG="--no-sandbox"
+          fi
+          [ -n "$SANDBOX_FLAG" ] && echo "[start.sh] chrome-sandbox not usable -> launching with --no-sandbox" >&2
+          exec "$BIN" $SANDBOX_FLAG --extensions-dir "$HERE/data/extensions" \
                       --user-data-dir "$HERE/data/user" "$@"
           SH
           chmod 0755 "$OUT/start.sh"
@@ -690,19 +707,41 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb
-          chmod +x SudoStudio-Linux/bin/codium 2>/dev/null || true
+          sudo apt-get install -y -qq xvfb libnss3 libgbm1 libasound2t64
+          B="$GITHUB_WORKSPACE/SudoStudio-Linux"
+          chmod +x "$B/bin/codium" 2>/dev/null || true
           out="$GITHUB_WORKSPACE/reports/p47"
           mkdir -p "$out"
+
+          # Evidence first: why the editor could refuse to start.
+          echo "--- chrome-sandbox ---"
+          ls -l "$B/chrome-sandbox" 2>/dev/null || echo "[WARN] no chrome-sandbox shipped"
+          echo "--- editor version (headless) ---"
+          xvfb-run -a "$B/bin/codium" --no-sandbox --version > "$out/editor-version.txt" 2>&1 || true
+          head -5 "$out/editor-version.txt" || true
+
+          # A portable tarball cannot carry the root-owned setuid helper, so the
+          # editor is launched the way start.sh launches it: --no-sandbox.
+          cat > "$RUNNER_TEMP/codium-nosandbox" <<SH
+          #!/usr/bin/env bash
+          exec "$B/bin/codium" --no-sandbox "\$@"
+          SH
+          chmod +x "$RUNNER_TEMP/codium-nosandbox"
+
           set +e
           xvfb-run -a node src/scripts/ci/p47-installed-launch-test.js \
-            --editor "$GITHUB_WORKSPACE/SudoStudio-Linux/bin/codium" \
-            --install-dir "$GITHUB_WORKSPACE/SudoStudio-Linux" \
+            --editor "$RUNNER_TEMP/codium-nosandbox" \
+            --install-dir "$B" \
             --timeout-s 45 --out-dir "$out"
           rc=$?
           set -e
           echo "[INFO] p47 exit code: $rc"
-          if [ "$rc" = "2" ]; then echo '[FAIL] editor launch test inconclusive'; exit 1; fi
+          if [ "$rc" = "2" ]; then
+            echo '[FAIL] editor launch test inconclusive'
+            echo '--- user-data-dir logs ---'
+            find "${TMPDIR:-/tmp}" -maxdepth 3 -path '*p47userdata*' -name '*.log' 2>/dev/null | head -10 || true
+            exit 1
+          fi
           exit "$rc"
 
       - name: Upload Linux test reports
