@@ -7,11 +7,11 @@ on:
     tags: ['v*']
 
 env:
-  # P57 pins: workflows 01 + 02 ran on Sudo-studio main b551b24
-  # (stabilisation du mode agent + harnais de test fonctionnel total Linux).
+  # P57 pins: workflows 01 + 02 ran on Sudo-studio main 6cc96cc
+  # (backend empaquete fonctionnel sur Linux : journaux + donnees).
   # Bump both ids whenever main moves.
-  BACKEND_RUN_ID: "42399843808"
-  RUNTIME_RUN_ID: "42399845770"
+  BACKEND_RUN_ID: "42403777887"
+  RUNTIME_RUN_ID: "42403779482"
 
 jobs:
   build:
