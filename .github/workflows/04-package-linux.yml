@@ -33,8 +33,8 @@ env:
   SUDO_STUDIO_REPO: juleszackaria-lab/Sudo-studio
   # Reference runs (workflows 01 + 02 of Sudo-studio). They define the commit
   # this Linux build is made from. Bump these two ids whenever main moves.
-  BACKEND_RUN_ID: "42403777887"
-  RUNTIME_RUN_ID: "42403779482"
+  BACKEND_RUN_ID: "42632252181"
+  RUNTIME_RUN_ID: "42632256120"
   EDITOR_VERSION: "1.97.2.25045"
   NODE_VERSION: "18"
   PYTHON_VERSION: "3.11"
@@ -401,6 +401,7 @@ jobs:
           run backend/tests/test-p24-agent-core.js
           run backend/tests/test-p25-agent-tools.js
           run backend/tests/test-p26-agent-loop.js
+          run backend/tests/test-p59-platform.js
           run backend/tests/test-p27-extension.js
           run backend/tests/test-p39-always-answer.js
           run backend/tests/test-p43-context.js
