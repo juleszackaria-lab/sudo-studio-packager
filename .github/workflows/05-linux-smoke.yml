@@ -1,0 +1,326 @@
+name: 05 - Linux smoke test (clean containers)
+
+# P60-D: the mandatory gate before ANY Linux artifact is considered
+# deliverable. This workflow does NOT build anything: it takes the .tar.gz,
+# .deb and .rpm produced by workflow 04 and installs them into CLEAN
+# containers of the target distributions. Inside each one it starts the
+# installed product headless (Xvfb), checks the backend and the runtime,
+# loads the real test model, asks /v1/chat/completions, exercises the agent
+# (Electron-as-node, agent creates a file after an explicit approval),
+# checks the log directory, then uninstalls.
+#
+# Then, for every container, the SAME installed tree is re-run with
+# `--network none` (docker commit of phase 1): the offline proof.
+#
+# One red cell = the whole workflow is red = no artifact is deliverable.
+#
+# Called automatically at the end of 04 (workflow_call) or dispatched by
+# hand against an older run (workflow_dispatch + source_run_id).
+
+on:
+  workflow_call:
+    inputs:
+      source_run_id:
+        description: Run id of workflow 04 that produced the artifacts
+        required: true
+        type: string
+      model_url:
+        description: GGUF used by the container tests (real model, real inference)
+        required: false
+        type: string
+        default: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+      model_sha256:
+        description: Expected SHA256 of the GGUF (empty = recorded, not enforced)
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Run id of workflow 04 that produced the artifacts
+        required: true
+        type: string
+      model_url:
+        description: GGUF used by the container tests
+        required: false
+        type: string
+        default: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+      model_sha256:
+        description: Expected SHA256 of the GGUF (empty = recorded, not enforced)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  # Reference run ids of workflows 01/02/03 in the Sudo-studio repository.
+  # Non-regression: these must still be green on the same commit.
+  SUDO_STUDIO_REPO: juleszackaria-lab/Sudo-studio
+
+jobs:
+  # ------------------------------------------------------------------ model
+  test-model:
+    name: Preload test model (GGUF)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download GGUF (retried, resumable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p model
+          for attempt in 1 2 3 4; do
+            echo "[INFO] tentative $attempt"
+            if curl -fL --retry 3 --retry-delay 5 --retry-all-errors -C - \
+                 -o model/test-model.gguf "${{ inputs.model_url }}"; then break; fi
+            sleep $((attempt * 10))
+          done
+          test -s model/test-model.gguf || { echo '[FAIL] modele non telecharge'; exit 1; }
+          ls -l model/test-model.gguf
+          sha256sum model/test-model.gguf | tee model/test-model.gguf.sha256
+          echo "attendu: '${{ inputs.model_sha256 }}'"
+
+      - name: Gate - model hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(cut -d' ' -f1 model/test-model.gguf.sha256)
+          expected='${{ inputs.model_sha256 }}'
+          if [ -n "$expected" ]; then
+            [ "$actual" = "$expected" ] || { echo "[FAIL] sha256 du modele: $actual != $expected"; exit 1; }
+            echo "[OK] sha256 du modele conforme"
+          else
+            echo "[INFO] aucun sha256 attendu fourni - empreinte enregistree, non imposee: $actual"
+          fi
+          du -h model/test-model.gguf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: P60-Test-Model
+          path: model/
+          retention-days: 7
+
+  # -------------------------------------------------------------- containers
+  smoke:
+    name: Smoke ${{ matrix.label }}
+    needs: test-model
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu-22.04 / deb / avx2
+            image: ubuntu:22.04
+            pkg_type: deb
+            artifact: SudoStudio-Linux-Deb
+            prepare: apt-get update -qq && apt-get install -y -qq curl ca-certificates xvfb procps >/dev/null
+            variant: avx2
+          - label: ubuntu-24.04 / deb / avx2
+            image: ubuntu:24.04
+            pkg_type: deb
+            artifact: SudoStudio-Linux-Deb
+            prepare: apt-get update -qq && apt-get install -y -qq curl ca-certificates xvfb procps >/dev/null
+            variant: avx2
+          - label: debian-12 / deb / compat
+            image: debian:12
+            pkg_type: deb
+            artifact: SudoStudio-Linux-Deb
+            prepare: apt-get update -qq && apt-get install -y -qq curl ca-certificates xvfb procps >/dev/null
+            variant: compat
+          - label: fedora-40 / rpm / avx2
+            image: fedora:40
+            pkg_type: rpm
+            artifact: SudoStudio-Linux-Rpm
+            prepare: dnf install -y -q curl ca-certificates xorg-x11-server-Xvfb procps-ng >/dev/null
+            variant: avx2
+          - label: rockylinux-9 / rpm / compat
+            image: rockylinux:9
+            pkg_type: rpm
+            artifact: SudoStudio-Linux-Rpm
+            prepare: dnf install -y -q curl ca-certificates xorg-x11-server-Xvfb procps-ng >/dev/null
+            variant: compat
+          - label: debian-12-slim / tar / compat (air-gapped)
+            image: debian:12-slim
+            pkg_type: tar
+            artifact: SudoStudio-Linux-Tar
+            prepare: apt-get update -qq && apt-get install -y -qq curl ca-certificates xvfb procps tar >/dev/null
+            variant: compat
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package built by workflow 04
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: pkg
+
+      - name: Download test model
+        uses: actions/download-artifact@v4
+        with:
+          name: P60-Test-Model
+          path: model
+
+      - name: Gate - sha256 of the package before touching a container
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l pkg model
+          test -f pkg/SHA256SUMS || { echo '[FAIL] SHA256SUMS absent'; exit 1; }
+          cd pkg
+          for f in *; do
+            case "$f" in
+              *.tar.gz|*.deb|*.rpm) grep " $f\$" SHA256SUMS > /tmp/one.sum || { echo "[FAIL] $f absent de SHA256SUMS"; exit 1; }
+                                    sha256sum -c /tmp/one.sum ;;
+            esac
+          done
+          echo "[OK] sha256 verifie"
+          cat SHA256SUMS
+
+      - name: Phase 1 - install + full test in a clean container (online)
+        shell: bash
+        run: |
+          set -o pipefail
+          PKG=$(ls pkg/*.tar.gz pkg/*.deb pkg/*.rpm 2>/dev/null | head -1)
+          echo "[INFO] paquet teste: $PKG"
+          docker run --name sut \
+            -v "$PWD/pkg:/pkg:ro" \
+            -v "$PWD/model:/model:ro" \
+            -v "$PWD:/work:ro" \
+            "${{ matrix.image }}" \
+            bash -lc '${{ matrix.prepare }} && bash /work/linux/container-test.sh --pkg-type ${{ matrix.pkg_type }} --pkg "/pkg/$(basename '"$PKG"')" --model /model/test-model.gguf --variant ${{ matrix.variant }}' \
+            2>&1 | tee phase1.log
+          rc=${PIPESTATUS[0]}
+          echo "exit=$rc" | tee -a phase1.log
+          exit $rc
+
+      - name: Phase 2 - same installed tree, no network at all (docker commit)
+        shell: bash
+        run: |
+          set -o pipefail
+          docker commit sut "sut-offline:${{ strategy.job-index }}"
+          docker run --rm --network none \
+            -v "$PWD/pkg:/pkg:ro" \
+            -v "$PWD/model:/model:ro" \
+            -v "$PWD:/work:ro" \
+            "sut-offline:${{ strategy.job-index }}" \
+            bash -lc 'bash /work/linux/container-test.sh --offline --pkg-type ${{ matrix.pkg_type }} --pkg none --model /model/test-model.gguf --variant ${{ matrix.variant }}' \
+            2>&1 | tee phase2-offline.log
+          rc=${PIPESTATUS[0]}
+          echo "exit=$rc" | tee -a phase2-offline.log
+          exit $rc
+
+      - name: Gate - verdict of this container
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in phase1.log phase2-offline.log; do
+            [ -f "$f" ] || { echo "[FAIL] $f absent"; fail=1; continue; }
+            echo "----- $f -----"
+            grep -E '^(PASS|FAIL|== RESULTAT)' "$f" || true
+            grep -q '^== RESULTAT' "$f" || { echo "[FAIL] $f sans verdict final"; fail=1; }
+            grep -q '^FAIL ' "$f" && { echo "[FAIL] $f contient au moins un FAIL"; fail=1; }
+          done
+          [ "$fail" = "0" ] || exit 1
+
+      - name: Docker diagnostics on failure
+        if: failure()
+        shell: bash
+        run: docker logs sut 2>&1 | tail -50 || true
+
+      - name: Upload container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P60-smoke-${{ strategy.job-index }}
+          path: |
+            phase1.log
+            phase2-offline.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ------------------------------------------------------------------ gate
+  smoke-gate:
+    name: P60 delivery gate (all containers green)
+    needs: [test-model, smoke]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: P60-smoke-*
+          merge-multiple: false
+          path: logs
+
+      - name: Gate - every container passed both phases
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          echo "| conteneur | phase 1 (en ligne) | phase 2 (hors ligne) |"
+          echo "|---|---|---|"
+          for d in logs/*/; do
+            [ -d "$d" ] || continue
+            p1=$(grep -h '^== RESULTAT' "$d/phase1.log" 2>/dev/null | tail -1)
+            p2=$(grep -h '^== RESULTAT' "$d/phase2-offline.log" 2>/dev/null | tail -1)
+            echo "| $(basename "$d") | ${p1:-absent} | ${p2:-absent} |"
+            case "$p1" in *", 0 FAIL"*) ;; *) echo "[FAIL] $(basename "$d") phase 1 rouge ou absente"; fail=1 ;; esac
+            case "$p2" in *", 0 FAIL"*) ;; *) echo "[FAIL] $(basename "$d") phase 2 rouge ou absente"; fail=1 ;; esac
+          done
+          [ "$fail" = "0" ] || { echo '[FAIL] au moins un conteneur est rouge : aucun artefact n est livrable'; exit 1; }
+          echo '[OK] tous les conteneurs sont verts (phase 1 + phase 2 hors ligne)'
+
+  # ------------------------------------------------- non-regression Windows
+  windows-non-regression:
+    name: Windows 01/02/03 still green
+    needs: test-model
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query the latest runs of 01, 02 and 03 on main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/lastrun.py <<'PYEOF'
+          import json, sys
+          mode = sys.argv[1]
+          d = json.load(sys.stdin)
+          if mode == "workflow":
+              for w in d.get("workflows", []):
+                  if w["name"] == sys.argv[2]:
+                      print(w["id"]); break
+          else:
+              r = d.get("workflow_runs", [])
+              if r:
+                  print(r[0]["id"], r[0]["conclusion"], r[0]["head_sha"][:7])
+          PYEOF
+          fail=0
+          sha=""
+          for wf in "01 - Build Backend EXE" "02 - Build Runtime" "03 - Package Windows"; do
+            id=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$SUDO_STUDIO_REPO/actions/workflows" \
+              | python3 /tmp/lastrun.py workflow "$wf" || true)
+            if [ -z "${id:-}" ]; then
+              echo "[WARN] workflow '$wf' introuvable dans $SUDO_STUDIO_REPO : non verifie ici"
+              continue
+            fi
+            rid=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$SUDO_STUDIO_REPO/actions/workflows/$id/runs?branch=main&per_page=1" \
+              | python3 /tmp/lastrun.py run || true)
+            echo "'$wf' -> ${rid:-aucun run}"
+            concl=$(echo "$rid" | awk '{print $2}')
+            wsha=$(echo "$rid" | awk '{print $3}')
+            [ "$concl" = "success" ] || { echo "[FAIL] '$wf' : dernier run main = ${concl:-absent}"; fail=1; }
+            if [ -z "$sha" ]; then sha="$wsha"; elif [ "$sha" != "$wsha" ]; then
+              echo "[FAIL] 01/02/03 ne partagent pas le meme commit ($sha vs $wsha)"; fail=1
+            fi
+          done
+          [ "$fail" = "0" ] || exit 1
+          echo "[OK] Windows 01/02/03 verts sur le meme commit $sha"

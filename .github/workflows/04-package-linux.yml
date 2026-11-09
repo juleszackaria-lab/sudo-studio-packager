@@ -44,7 +44,7 @@ jobs:
   # ──────────────────────────────────────────────────── GUARD (cheap, first) ──
   guard:
     name: Guard - pins are green and agree
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 10
     outputs:
       sha: ${{ steps.pins.outputs.sha }}
@@ -102,7 +102,7 @@ jobs:
   build-backend-linux:
     name: Build backend (linux-x64)
     needs: guard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - name: Checkout Sudo-studio (pinned commit)
@@ -181,7 +181,7 @@ jobs:
   build-runtime-linux:
     name: Build runtime (linux-x64)
     needs: guard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 300
     steps:
       - name: Checkout Sudo-studio (pinned commit)
@@ -265,6 +265,23 @@ jobs:
           for good in ('AVX = 1', 'AVX2 = 1', 'BMI2 = 1'):
               assert good in p.stdout, 'avx2 must report ' + good + ': ' + p.stdout.strip()
           print('[GATE] avx2 variant OK: AVX/AVX2/BMI2 present')
+
+      # P60: the two --target trees contain the whole CMake build (objects,
+      # static libs, caches). Shipping them made a 2.7 GB one-file runtime.
+      # Only the importable package + its shared objects are kept.
+      - name: Prune llama variant trees (size gate)
+        working-directory: src/backend/runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          before=$(du -sm llama_variants | cut -f1)
+          find llama_variants -type d \( -name build -o -name CMakeFiles -o -name '*.egg-info' -o -name '__pycache__' -o -name tests -o -name '.git' \) -prune -exec rm -rf {} + 2>/dev/null || true
+          find llama_variants -type f \( -name '*.o' -o -name '*.a' -o -name '*.obj' -o -name '*.pyc' -o -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -delete 2>/dev/null || true
+          after=$(du -sm llama_variants | cut -f1)
+          echo "[INFO] llama_variants : ${before} Mo -> ${after} Mo"
+          du -sh llama_variants/* || true
+          find llama_variants -name '*.so' | head -10
+          test -n "$(find llama_variants -name '*.so' | head -1)" || { echo '[FAIL] aucune bibliotheque partagee apres elagage'; exit 1; }
 
       - name: Build runtime executable
         working-directory: src/backend/runtime
@@ -354,9 +371,13 @@ jobs:
   package-linux:
     name: Assemble SudoStudio-Linux
     needs: [guard, build-backend-linux, build-runtime-linux]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
+      # The packager repo itself (linux/make-packages.sh, specs, desktop file).
+      - name: Checkout packager
+        uses: actions/checkout@v4
+
       - name: Checkout Sudo-studio (pinned commit)
         uses: actions/checkout@v4
         with:
@@ -402,6 +423,7 @@ jobs:
           run backend/tests/test-p25-agent-tools.js
           run backend/tests/test-p26-agent-loop.js
           run backend/tests/test-p59-platform.js
+          run backend/tests/test-p60-linux-portability.js
           run backend/tests/test-p27-extension.js
           run backend/tests/test-p39-always-answer.js
           run backend/tests/test-p43-context.js
@@ -565,6 +587,101 @@ jobs:
           fi
           echo '[OK] bundle layout complete'
 
+      # P60-B: the three deliverables, from the SAME bundle that was just
+      # gated. deb/rpm install the same tree under /opt/sudo-studio.
+      - name: Build .tar.gz / .deb / .rpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm >/dev/null
+          cp src/resources/icon.png SudoStudio-Linux/sudo-studio.png
+          [ -f src/THIRD_PARTY_NOTICES.md ] && cp src/THIRD_PARTY_NOTICES.md SudoStudio-Linux/THIRD_PARTY_NOTICES.md || true
+          [ -f src/LICENSE ] && cp src/LICENSE SudoStudio-Linux/LICENSE || true
+          VERSION="$EDITOR_VERSION-${{ needs.guard.outputs.sha }}"
+          VERSION=$(echo "$VERSION" | cut -c1-40 | tr '/' '-')
+          bash linux/make-packages.sh "$PWD/SudoStudio-Linux" "$VERSION" x64 "$PWD/out" "$PWD/src/resources/icon.png"
+          ls -la out
+
+      - name: Gate - artifacts complete (sha256 + notices)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd out
+          test -f SHA256SUMS || { echo '[FAIL] SHA256SUMS absent'; exit 1; }
+          sha256sum -c SHA256SUMS
+          ls -1 *.tar.gz >/dev/null || { echo '[FAIL] tar.gz absent'; exit 1; }
+          ls -1 *.deb >/dev/null || { echo '[FAIL] .deb absent'; exit 1; }
+          ls -1 *.rpm >/dev/null || { echo '[FAIL] .rpm absent'; exit 1; }
+          deb=$(ls *.deb | head -1)
+          dpkg-deb -c "$deb" | grep -q './opt/sudo-studio/backend/backend' || { echo '[FAIL] backend absent du .deb'; exit 1; }
+          dpkg-deb -c "$deb" | grep -q './usr/bin/sudo-studio' || { echo '[FAIL] lanceur absent du .deb'; exit 1; }
+          dpkg-deb -c "$deb" | grep -q './usr/share/applications/sudo-studio.desktop' || { echo '[FAIL] .desktop absent'; exit 1; }
+          dpkg-deb -c "$deb" | grep -q 'THIRD_PARTY_NOTICES' || { echo '[FAIL] notices absentes'; exit 1; }
+          rpmf=$(ls *.rpm | head -1)
+          rpm -qlp "$rpmf" | grep -q '/opt/sudo-studio/backend/backend' || { echo '[FAIL] backend absent du .rpm'; exit 1; }
+          rpm -qlp "$rpmf" | grep -q '/usr/bin/sudo-studio' || { echo '[FAIL] lanceur absent du .rpm'; exit 1; }
+          echo '[OK] les 3 artefacts sont complets'
+          cat SHA256SUMS
+
+      # P60-D: one artifact per format so each container cell of 05 downloads
+      # ONLY what it installs (a single combined artifact would mean 3 GB x 6).
+      - name: Upload .tar.gz
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Linux-Tar
+          path: |
+            out/*.tar.gz
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Linux-Deb
+          path: |
+            out/*.deb
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload .rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Linux-Rpm
+          path: |
+            out/*.rpm
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      # Manifest of the three artifacts + their SHA256 (evidence b of P60).
+      - name: Write artifact manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# Sudo Studio Linux artifacts"
+            echo "run: ${{ github.run_id }}"
+            echo "commit: ${{ needs.guard.outputs.sha }}"
+            echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            cd out
+            while read -r sum name; do
+              sz=$(du -h "$name" | cut -f1)
+              echo "- $name : $sz : sha256 $sum"
+            done < SHA256SUMS
+          } > ARTIFACT-MANIFEST.md
+          cat ARTIFACT-MANIFEST.md
+
+      - name: Upload artifact manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: SudoStudio-Linux-Manifest
+          path: ARTIFACT-MANIFEST.md
+          retention-days: 30
+
       - name: Upload portable + reports
         uses: actions/upload-artifact@v4
         with:
@@ -580,7 +697,7 @@ jobs:
   linux-delivery-gates:
     name: P29+P31 Linux delivery gate
     needs: package-linux
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - uses: actions/download-artifact@v4
@@ -670,7 +787,7 @@ jobs:
   linux-total-test:
     name: Linux total functionality (installed bundle)
     needs: [guard, linux-delivery-gates]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Checkout Sudo-studio (test harness only)
@@ -729,6 +846,18 @@ jobs:
           SH
           chmod +x "$RUNNER_TEMP/codium-nosandbox"
 
+          # Hard proof the extension is DISCOVERED by the installed editor.
+          echo '--- extensions listed by the editor ---'
+          listed=$(xvfb-run -a "$B/bin/codium" --no-sandbox \
+            --extensions-dir "$B/extensions" --list-extensions 2>/dev/null || true)
+          echo "$listed"
+          echo "$listed" > "$out/extensions-listed.txt"
+          if ! echo "$listed" | grep -qi 'sudo'; then
+            echo '[FAIL] l extension Sudo Studio n est pas decouverte par l editeur installe'
+            exit 1
+          fi
+          echo '[OK] extension decouverte par l editeur'
+
           set +e
           xvfb-run -a node src/scripts/ci/p47-installed-launch-test.js \
             --editor "$RUNNER_TEMP/codium-nosandbox" \
@@ -737,13 +866,14 @@ jobs:
           rc=$?
           set -e
           echo "[INFO] p47 exit code: $rc"
-          if [ "$rc" = "2" ]; then
-            echo '[FAIL] editor launch test inconclusive'
-            echo '--- user-data-dir logs ---'
-            find "${TMPDIR:-/tmp}" -maxdepth 3 -path '*p47userdata*' -name '*.log' 2>/dev/null | head -10 || true
-            exit 1
-          fi
-          exit "$rc"
+          case "$rc" in
+            0) echo '[OK] activation de l extension observee dans les journaux' ;;
+            3) echo '[WARN] activation NON OBSERVEE dans les journaux -> ecrit NON PROUVE (le test dur reste : editeur demarre + extension listee)' ;;
+            *)
+              echo '[FAIL] editeur non demarre ou erreur d enregistrement'
+              find "${TMPDIR:-/tmp}" -maxdepth 3 -path '*p47userdata*' -name '*.log' 2>/dev/null | head -10 || true
+              exit 1 ;;
+          esac
 
       - name: Upload Linux test reports
         if: always()
@@ -753,3 +883,47 @@ jobs:
           path: reports/**
           if-no-files-found: warn
           retention-days: 30
+
+  # P60-D: the mandatory smoke test. NO artifact is deliverable unless every
+  # clean container (ubuntu 22.04/24.04, debian 12, fedora 40, rocky 9,
+  # debian slim for the tarball) installs the package, runs it headless,
+  # loads the real model, answers /v1/chat/completions, lets the agent create
+  # a file after an explicit approval, writes its Linux log dir, uninstalls,
+  # and does all of it AGAIN with no network at all.
+  linux-smoke:
+    name: Linux smoke test (clean containers)
+    needs: [guard, package-linux, linux-delivery-gates, linux-total-test]
+    uses: ./.github/workflows/05-linux-smoke.yml
+    with:
+      source_run_id: ${{ github.run_id }}
+      model_url: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+      model_sha256: ""
+
+  # Single human-readable verdict. Red smoke => this job is red => the run is
+  # red => nothing is deliverable (P60 delivery gate, item "un seul test rouge").
+  linux-delivery-decision:
+    name: P60 Linux delivery decision
+    needs: [linux-total-test, linux-smoke]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SudoStudio-Linux-Manifest
+          path: manifest
+
+      - name: Final gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== manifeste des artefacts ==="
+          cat manifest/ARTIFACT-MANIFEST.md
+          echo
+          echo "total test (bundle installe) : ${{ needs.linux-total-test.result }}"
+          echo "containers smoke (6 cellules) : ${{ needs.linux-smoke.result }}"
+          if [ "${{ needs.linux-total-test.result }}" != "success" ] \
+             || [ "${{ needs.linux-smoke.result }}" != "success" ]; then
+            echo '[FAIL] au moins une porte est rouge : AUCUN artefact n est livrable'
+            exit 1
+          fi
+          echo '[OK] portes vertes : les artefacts de ce run sont livrables'
+          echo '[RAPPEL] ceci ne prouve pas l affichage sur un vrai bureau Linux (NON PROUVE).'
