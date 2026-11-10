@@ -33,8 +33,8 @@ env:
   SUDO_STUDIO_REPO: juleszackaria-lab/Sudo-studio
   # Reference runs (workflows 01 + 02 of Sudo-studio). They define the commit
   # this Linux build is made from. Bump these two ids whenever main moves.
-  BACKEND_RUN_ID: "42632252181"
-  RUNTIME_RUN_ID: "42632256120"
+  BACKEND_RUN_ID: "42905597950"
+  RUNTIME_RUN_ID: "42905601799"
   EDITOR_VERSION: "1.97.2.25045"
   NODE_VERSION: "18"
   PYTHON_VERSION: "3.11"
