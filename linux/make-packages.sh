@@ -242,7 +242,7 @@ cp -a $STAGE/. %{buildroot}/
 /usr/bin/sudo-studio
 /usr/share/applications/sudo-studio.desktop
 /usr/share/doc/sudo-studio
-%if 0%{?have_icon}
+%if 0%{?have_icon:1}%{!?have_icon:0}
 /usr/share/icons/hicolor/512x512/apps/sudo-studio.png
 %endif
 %post
@@ -253,9 +253,14 @@ for pidfile in "\$HOME/.local/share/sudo-studio/logs/backend.pid"; do
   [ -f "\$pidfile" ] && kill "\$(cat "\$pidfile")" 2>/dev/null || :
 done
 SPEC
-  DEFINES=""
-  if [ -n "$ICON" ] && [ -f "$ICON" ]; then DEFINES="--define have_icon 1"; fi
-  rpmbuild -bb --quiet $DEFINES \
+  # P61: `--define have_icon 1` non quote se decoupe en DEUX arguments
+  # (--define have_icon, puis 1) : rpmbuild cree un macro au corps VIDE et
+  # echoue sur '%if 0%{?have_icon}' ("Macro %have_icon has empty body",
+  # run 42913529884). Chaque define est donc un element de tableau, passe
+  # entre guillemets, forme 'nom corps'.
+  DEFINES=()
+  if [ -n "$ICON" ] && [ -f "$ICON" ]; then DEFINES=(--define "have_icon 1"); fi
+  rpmbuild -bb --quiet "${DEFINES[@]}" \
     --define "_topdir $TOP" \
     --define "_build_id_links none" \
     "$TOP/SPECS/sudostudio.spec" > "$WORK/rpm.log" 2>&1 || {
