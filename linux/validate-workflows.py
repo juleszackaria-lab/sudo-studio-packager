@@ -149,6 +149,25 @@ for wf in sorted(WF.glob("*.yml")):
             # `shell: python` (ou node) : le bloc n'est pas du bash.
             if (step.get("shell") or "").lower() not in ("", "bash"):
                 continue
+            # P61: `... | grep -q` sous `set -o pipefail` tue le producteur
+            # (SIGPIPE) et fait echouer le tube : deux gates rouges pour rien
+            # (runs 42909518945 et 42919978931). Materialise la liste.
+            if "grep -q" in script and "|" in script:
+                bad = []
+                for ln in script.splitlines():
+                    code = ln.split("#", 1)[0] if ln.lstrip().startswith("#") else ln
+                    if code.lstrip().startswith("#") or not re.search(r"\|\s*grep\s+-q", code):
+                        continue
+                    # `echo "..." | grep -q` : le producteur est un echo, le
+                    # SIGPIPE est sans consequence (ecriture minuscule).
+                    producer = code.split("|", 1)[0].strip()
+                    if producer.startswith("if !") or producer.startswith("! "):
+                        producer = producer.split(None, 2)[-1] if producer.startswith("if !") else producer[2:].strip()
+                    if producer.startswith("echo ") or producer.startswith("printf "):
+                        continue
+                    bad.append(code.strip())
+                ok(not bad, f"{wf.name}::{job_name}::step{i + 1} pas de '| grep -q' sous pipefail"
+                   + (f" -> {bad[0][:80]}" if bad else ""))
             good, err = bash_syntax_ok(script)
             label = f"{wf.name}::{job_name}::step{i + 1} ({step.get('name', 'run')})"
             ok(good, f"bash -n {label}" + (f" -> {err[0]}" if err and err[0] else ""))

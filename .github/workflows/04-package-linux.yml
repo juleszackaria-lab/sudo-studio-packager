@@ -623,13 +623,21 @@ jobs:
           ls -1 *.deb >/dev/null || { echo '[FAIL] .deb absent'; exit 1; }
           ls -1 *.rpm >/dev/null || { echo '[FAIL] .rpm absent'; exit 1; }
           deb=$(ls *.deb | head -1)
-          dpkg-deb -c "$deb" | grep -q './opt/sudo-studio/backend/backend' || { echo '[FAIL] backend absent du .deb'; exit 1; }
-          dpkg-deb -c "$deb" | grep -q './usr/bin/sudo-studio' || { echo '[FAIL] lanceur absent du .deb'; exit 1; }
-          dpkg-deb -c "$deb" | grep -q './usr/share/applications/sudo-studio.desktop' || { echo '[FAIL] .desktop absent'; exit 1; }
-          dpkg-deb -c "$deb" | grep -q 'THIRD_PARTY_NOTICES' || { echo '[FAIL] notices absentes'; exit 1; }
+          # P61: `dpkg-deb -c | grep -q` sous `set -o pipefail` echoue avec
+          # 'tar: stdout: write error' des que grep -q trouve (il ferme le
+          # tube, tar meurt sur SIGPIPE) -> gate rouge alors que le paquet est
+          # bon (run 42919978931). On materialise la liste UNE fois, puis on
+          # l'interroge : plus de tube, et 4 greps coutent un seul parcours
+          # de pres de 3 Go d'archive.
+          dpkg-deb -c "$deb" > "$RUNNER_TEMP/deb.list" 2>/dev/null || { echo '[FAIL] .deb illisible'; exit 1; }
+          for needle in './opt/sudo-studio/backend/backend' './usr/bin/sudo-studio' './usr/share/applications/sudo-studio.desktop' 'THIRD_PARTY_NOTICES'; do
+            grep -qF "$needle" "$RUNNER_TEMP/deb.list" || { echo "[FAIL] $needle absent du .deb"; exit 1; }
+          done
           rpmf=$(ls *.rpm | head -1)
-          rpm -qlp "$rpmf" | grep -q '/opt/sudo-studio/backend/backend' || { echo '[FAIL] backend absent du .rpm'; exit 1; }
-          rpm -qlp "$rpmf" | grep -q '/usr/bin/sudo-studio' || { echo '[FAIL] lanceur absent du .rpm'; exit 1; }
+          rpm -qlp "$rpmf" > "$RUNNER_TEMP/rpm.list" 2>/dev/null || { echo '[FAIL] .rpm illisible'; exit 1; }
+          for needle in '/opt/sudo-studio/backend/backend' '/usr/bin/sudo-studio'; do
+            grep -qF "$needle" "$RUNNER_TEMP/rpm.list" || { echo "[FAIL] $needle absent du .rpm"; exit 1; }
+          done
           echo '[OK] les 3 artefacts sont complets'
           cat SHA256SUMS
 
