@@ -280,8 +280,16 @@ jobs:
           after=$(du -sm llama_variants | cut -f1)
           echo "[INFO] llama_variants : ${before} Mo -> ${after} Mo"
           du -sh llama_variants/* || true
-          find llama_variants -name '*.so' | head -10
-          test -n "$(find llama_variants -name '*.so' | head -1)" || { echo '[FAIL] aucune bibliotheque partagee apres elagage'; exit 1; }
+          # P61: `find ... | head -10` fait mourir find sur SIGPIPE ("Broken
+          # pipe") ; avec `set -o pipefail` l etape echouait alors que l elagage
+          # avait reussi (run 42909518945). On materialise la liste une fois.
+          so_list=$(find llama_variants -name '*.so' | sort || true)
+          echo "$so_list" | sed -n '1,10p'
+          if [ -z "$so_list" ]; then
+            echo '[FAIL] aucune bibliotheque partagee apres elagage'
+            exit 1
+          fi
+          echo "[INFO] bibliotheques partagees : $(echo "$so_list" | wc -l)
 
       - name: Build runtime executable
         working-directory: src/backend/runtime
