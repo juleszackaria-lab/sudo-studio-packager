@@ -111,6 +111,52 @@ failed_checks = [
 ]
 ok(not failed_checks, f"les 4 verifications coeur existent ({failed_checks or 'toutes presentes'})")
 
+print("== bash -n sur chaque bloc run (workflows + script conteneur) ==")
+import subprocess
+import tempfile
+
+def bash_syntax_ok(script):
+    with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as fh:
+        fh.write(script)
+        path = fh.name
+    try:
+        r = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
+        return r.returncode == 0, (r.stderr or "").strip().splitlines()[:1]
+    finally:
+        pathlib.Path(path).unlink(missing_ok=True)
+
+for wf in sorted(WF.glob("*.yml")):
+    try:
+        doc = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        ok(False, f"{wf.name} illisible ({exc})")
+        continue
+    for job_name, job in (doc.get("jobs") or {}).items():
+        # Sur un runner Windows, le shell par defaut est PowerShell : un bloc
+        # "run" y contient legitimement du PowerShell. On ne verifie donc que
+        # les jobs executes sur Linux.
+        runs_on = str(job.get("runs-on", ""))
+        if "ubuntu" not in runs_on:
+            continue
+        for i, step in enumerate(job.get("steps") or []):
+            script = step.get("run")
+            if not isinstance(script, str):
+                continue
+            if (step.get("shell") or "").lower() in ("pwsh", "powershell"):
+                continue
+            if script.lstrip().startswith("powershell"):
+                continue
+            # `shell: python` (ou node) : le bloc n'est pas du bash.
+            if (step.get("shell") or "").lower() not in ("", "bash"):
+                continue
+            good, err = bash_syntax_ok(script)
+            label = f"{wf.name}::{job_name}::step{i + 1} ({step.get('name', 'run')})"
+            ok(good, f"bash -n {label}" + (f" -> {err[0]}" if err and err[0] else ""))
+
+for extra in (ROOT / "linux").glob("*.sh"):
+    good, err = bash_syntax_ok(extra.read_text(encoding="utf-8"))
+    ok(good, f"bash -n {extra.name}" + (f" -> {err[0]}" if err and err[0] else ""))
+
 print()
 print(f"== {checks - len(fails)}/{checks} verifications OK, {len(fails)} FAIL ==")
 for f in fails:

@@ -289,7 +289,8 @@ jobs:
             echo '[FAIL] aucune bibliotheque partagee apres elagage'
             exit 1
           fi
-          echo "[INFO] bibliotheques partagees : $(echo "$so_list" | wc -l)
+          so_count=$(printf '%s\n' "$so_list" | wc -l | tr -d ' ')
+          echo "[INFO] bibliotheques partagees : $so_count"
 
       - name: Build runtime executable
         working-directory: src/backend/runtime
