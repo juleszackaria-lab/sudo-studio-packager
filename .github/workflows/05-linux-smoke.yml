@@ -192,7 +192,12 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          PKG=$(ls pkg/*.tar.gz pkg/*.deb pkg/*.rpm 2>/dev/null | head -1)
+          # P61: chaque cellule ne recoit qu UN type de paquet. `ls pkg/*.tar.gz
+          # pkg/*.deb pkg/*.rpm` echoue des qu un motif ne correspond pas, et
+          # sous `set -e` l etape s arretait avant meme de lancer le conteneur
+          # (run 42945620034, les 6 cellules). find ne se plaint pas.
+          PKG=$(find pkg -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \) -print | head -1)
+          test -n "$PKG" || { echo '[FAIL] aucun paquet dans pkg/'; exit 1; }
           echo "[INFO] paquet teste: $PKG"
           docker run --name sut \
             -v "$PWD/pkg:/pkg:ro" \
