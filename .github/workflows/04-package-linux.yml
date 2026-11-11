@@ -844,7 +844,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb libnss3 libgbm1 libasound2t64
+          # P61: libasound2t64 n existe qu a partir d Ubuntu 24.04 ; sur le
+          # runner ubuntu-22.04 le paquet s appelle libasound2 (run
+          # 42930814351 : 'E: Unable to locate package libasound2t64').
+          sudo apt-get install -y -qq xvfb libnss3 libgbm1 libasound2t64 \
+            || sudo apt-get install -y -qq xvfb libnss3 libgbm1 libasound2
           B="$GITHUB_WORKSPACE/SudoStudio-Linux"
           chmod +x "$B/bin/codium" 2>/dev/null || true
           out="$GITHUB_WORKSPACE/reports/p47"
