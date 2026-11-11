@@ -350,6 +350,14 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
       tail -40 /tmp/turn.sse 2>/dev/null | cut -c1-400 | sed 's/^/[DIAG]   /'
       echo "[DIAG] journal de l agent (tail) :"
       tail -20 /tmp/agent.log 2>/dev/null | cut -c1-300 | sed 's/^/[DIAG]   /'
+      # P61: le journal du MOTEUR (agent.log) porte le texte d erreur complet
+      # des appels d outil ; /tmp/agent.log ne contient que la poignee stdout.
+      echo "[DIAG] journal du moteur ($AGENT_DIR/logs) :"
+      for f in "$AGENT_DIR"/logs/*.log; do
+        [ -f "$f" ] || continue
+        echo "[DIAG]   ==> $(basename "$f")"
+        grep -E "tool fail|tool ok|approuve|erreur" "$f" 2>/dev/null | tail -12 | cut -c1-400 | sed 's/^/[DIAG]     /'
+      done
     fi
   fi
 fi
