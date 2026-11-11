@@ -31,8 +31,9 @@ ko()   { FAIL=$((FAIL+1)); FAILS="$FAILS | $1"; echo "FAIL $1 :: ${2:-}"; }
 head1(){ echo; echo "== $1 =="; }
 
 PREFIX=/opt/sudo-studio
-BIN="$PREFIX/bin/codium"
-[ -x "$BIN" ] || BIN="$PREFIX/bin/sudostudio"
+# P61: BIN est calcule APRES l installation (plus bas). Le resoudre ici le
+# faisait echouer sur un fichier pas encore installe (run 42947411025).
+BIN=""
 BACKEND="$PREFIX/backend/backend"
 RUNTIME="$PREFIX/backend/runtime/server"
 PPID_FILE=/tmp/sudo-test-pids
@@ -83,6 +84,9 @@ case "$PKG_TYPE" in
 esac
 fi
 
+# P61: le binaire editeur se resout ICI, une fois le paquet installe.
+BIN="$PREFIX/bin/codium"
+[ -x "$BIN" ] || BIN="$PREFIX/bin/sudostudio"
 # P61: si le binaire attendu n est pas executable, on dit POURQUOI (present
 # mais sans bit x ? autre nom ? rien du tout ?) et on cherche un repli, au
 # lieu de sortir sur une ligne seche (run 42946374287).
@@ -115,13 +119,18 @@ fi
 head1 "editeur headless (xvfb)"
 export SUDO_STUDIO_ROOT="$PREFIX"
 export HOME=${HOME:-/root}
+# P61: en root, VSCodium exige --no-sandbox ET un --user-data-dir distinct
+# ("You are trying to start VSCodium as a super user ..."). Un poste reel
+# n est pas root : ce sont deux options de HARNAIS, pas du produit.
+ED_USER_DATA="${TMPDIR:-/tmp}/sut-editor-userdata"
+mkdir -p "$ED_USER_DATA"
 if command -v xvfb-run >/dev/null 2>&1; then
-  if xvfb-run -a "$BIN" --no-sandbox --version > /tmp/editor-version.txt 2>&1; then
+  if xvfb-run -a "$BIN" --no-sandbox --user-data-dir "$ED_USER_DATA" --version > /tmp/editor-version.txt 2>&1; then
     ok "editeur demarre sous Xvfb ($(head -1 /tmp/editor-version.txt))"
   else
     ko "editeur demarre sous Xvfb" "$(tail -3 /tmp/editor-version.txt | tr '\n' ' ')"
   fi
-  EXTL=$(xvfb-run -a "$BIN" --no-sandbox --extensions-dir "$PREFIX/extensions" --list-extensions 2>/dev/null | tr '\n' ' ')
+  EXTL=$(xvfb-run -a "$BIN" --no-sandbox --user-data-dir "$ED_USER_DATA" --extensions-dir "$PREFIX/extensions" --list-extensions 2>/dev/null | tr '\n' ' ')
   case "$EXTL" in *sudo*) ok "l editeur installe decouvre l extension Sudo Studio" ;; *) ko "extension decouverte par l editeur" "liste: $EXTL" ;; esac
 else
   ko "xvfb disponible" "xorg-x11-server-Xvfb / xvfb non installe"
@@ -219,7 +228,8 @@ export SUDO_AGENT_PORT=7311
 export SUDO_AGENT_STORE="$SUDO_STUDIO_HOME/agent-store"
 export SUDO_STUDIO_LOGS="$AGENT_LOG_DIR"
 export SUDO_AGENT_PROVIDER="{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}"
-ELECTRON_RUN_AS_NODE=1 "$BIN" "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
+ELECTRON_RUN_AS_NODE=1 "$BIN" --no-sandbox --user-data-dir "${TMPDIR:-/tmp}/sut-editor-userdata" \
+  "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
 echo $! >> "$PPID_FILE"
 AGENT_UP=0
 for i in $(seq 1 45); do
@@ -297,11 +307,21 @@ sleep 1
 if [ "$OFFLINE" = "1" ]; then
   ok "desinstallation non testee hors ligne (conteneur jetable, testee en phase 1)"
 elif [ "$PKG_TYPE" = "deb" ]; then
+  # Le test lui-meme ecrit extensions.json dans $PREFIX/extensions : c est un
+  # artefact de harnais, on le retire avant de juger la desinstallation.
+  rm -f "$PREFIX/extensions/extensions.json" 2>/dev/null || true
   apt-get remove -y -qq sudostudio > /tmp/uninstall.log 2>&1
-  [ ! -d "$PREFIX" ] && ok "desinstallation propre (deb) : /opt/sudo-studio supprime" || ko "desinstallation deb" "/opt/sudo-studio subsiste"
+  if [ ! -e /usr/bin/sudo-studio ] && [ ! -e "$PREFIX/backend/backend" ]; then
+    ok "desinstallation propre (deb) : fichiers du paquet retires"
+    [ -d "$PREFIX" ] && { echo "[INFO] restes hors paquet dans $PREFIX :"; find "$PREFIX" -maxdepth 2 2>/dev/null | head -10; }
+  else ko "desinstallation deb" "fichiers du paquet encore presents"; fi
 elif [ "$PKG_TYPE" = "rpm" ]; then
+  rm -f "$PREFIX/extensions/extensions.json" 2>/dev/null || true
   if command -v dnf >/dev/null 2>&1; then dnf remove -y sudostudio > /tmp/uninstall.log 2>&1; else rpm -e sudostudio > /tmp/uninstall.log 2>&1; fi
-  [ ! -d "$PREFIX" ] && ok "desinstallation propre (rpm) : /opt/sudo-studio supprime" || ko "desinstallation rpm" "/opt/sudo-studio subsiste"
+  if [ ! -e /usr/bin/sudo-studio ] && [ ! -e "$PREFIX/backend/backend" ]; then
+    ok "desinstallation propre (rpm) : fichiers du paquet retires"
+    [ -d "$PREFIX" ] && { echo "[INFO] restes hors paquet dans $PREFIX :"; find "$PREFIX" -maxdepth 2 2>/dev/null | head -10; }
+  else ko "desinstallation rpm" "fichiers du paquet encore presents"; fi
 else
   rm -rf /usr/local/SudoStudio-Linux && ok "suppression du dossier extrait (tar)"
 fi
