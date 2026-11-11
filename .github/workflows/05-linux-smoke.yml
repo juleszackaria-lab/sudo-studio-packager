@@ -173,10 +173,16 @@ jobs:
           ls -l pkg model
           test -f pkg/SHA256SUMS || { echo '[FAIL] SHA256SUMS absent'; exit 1; }
           cd pkg
+          # P61: le nom dans SHA256SUMS peut etre prefixe par "./" (sha256sum
+          # lance dans le dossier) ; le motif exigeait exactement un espace
+          # devant le nom, d ou un faux "absent de SHA256SUMS" (run
+          # 42937417228). Motif: espace OU "./" juste avant le nom.
           for f in *; do
             case "$f" in
-              *.tar.gz|*.deb|*.rpm) grep " $f\$" SHA256SUMS > /tmp/one.sum || { echo "[FAIL] $f absent de SHA256SUMS"; exit 1; }
-                                    sha256sum -c /tmp/one.sum ;;
+              *.tar.gz|*.deb|*.rpm)
+                grep -E "(^| |\./)$(printf '%s' "$f" | sed 's/[.[\*^$]/\\&/g')\$" SHA256SUMS > /tmp/one.sum \
+                  || { echo "[FAIL] $f absent de SHA256SUMS"; exit 1; }
+                sha256sum -c /tmp/one.sum ;;
             esac
           done
           echo "[OK] sha256 verifie"
