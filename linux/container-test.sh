@@ -308,7 +308,11 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
     APPLY=0
     for i in $(seq 1 60); do
       PEND=$(curl -s -H "Authorization: Bearer $SUDO_AGENT_TOKEN" "http://127.0.0.1:7311/sessions/$SID/approvals")
-      AID=$(echo "$PEND" | sed -n 's/"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      # P61: l extraction precedente imprimait la ligne ENTIERE (motif non
+      # ancre), donc l identifiant envoye etait illisible -> "corps JSON
+      # invalide" a chaque tentative (run 42951099165). On decoupe d abord
+      # sur les accolades puis on prend la 1re valeur "id".
+      AID=$(echo "$PEND" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
       if [ -n "$AID" ]; then
         R=$(curl -s -X POST -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -H 'Content-Type: application/json' \
           -d "{\"requestId\":\"$AID\",\"decision\":\"project\"}" \
