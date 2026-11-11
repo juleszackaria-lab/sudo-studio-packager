@@ -228,38 +228,47 @@ export SUDO_AGENT_PORT=7311
 export SUDO_AGENT_STORE="$SUDO_STUDIO_HOME/agent-store"
 export SUDO_STUDIO_LOGS="$AGENT_LOG_DIR"
 export SUDO_AGENT_PROVIDER="{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}"
-# P61: deux routes essayees, la seconde tracee. En mode Node, l editeur
-# interprete les arguments comme node (pas comme la CLI) : les options de
-# harnais (--no-sandbox / --user-data-dir) n y ont pas leur place, mais la
-# CLI les reclame quand elle s execute en root. On essaie donc sans, puis
-# avec, et on DIT laquelle a servi.
-agent_try() {
-  : > /tmp/agent.log
-  if [ "$1" = "flags" ]; then
-    ELECTRON_RUN_AS_NODE=1 "$BIN" --no-sandbox --user-data-dir "${TMPDIR:-/tmp}/sut-editor-userdata" \
-      "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
+# P61: l agent tourne sous un utilisateur NON root, comme sur un poste reel.
+# En root, VSCodium refuse de demarrer sans options de contournement, et ces
+# options n ont aucun sens en mode Node (elles sont parlees par node, pas par
+# la CLI) : d ou un journal vide et aucun serveur (run 42949351951).
+AGENT_DIR=/tmp/sut-agent
+mkdir -p "$AGENT_DIR/store" "$AGENT_DIR/logs"
+if [ "$(id -u)" = "0" ]; then
+  AGENT_USER=${SUDO_TEST_USER:-sutuser}
+  id "$AGENT_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$AGENT_USER" 2>/dev/null || true
+  if id "$AGENT_USER" >/dev/null 2>&1; then
+    chown -R "$AGENT_USER" "$AGENT_DIR" 2>/dev/null || true
+    AGENT_HOME=$(getent passwd "$AGENT_USER" | cut -d: -f6)
+    AGENT_RUN="su $AGENT_USER -c"
+    AGENT_MODE="utilisateur $AGENT_USER"
   else
-    ELECTRON_RUN_AS_NODE=1 "$BIN" "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
+    AGENT_HOME=$HOME; AGENT_RUN="bash -c"; AGENT_MODE="root (pas d utilisateur de test)"
   fi
-  echo $! >> "$PPID_FILE"
-}
+else
+  AGENT_HOME=$HOME; AGENT_RUN="bash -c"; AGENT_MODE="utilisateur courant ($(id -un))"
+fi
+
+AGENT_CMD="ELECTRON_RUN_AS_NODE=1 HOME=$AGENT_HOME"
+AGENT_CMD="$AGENT_CMD SUDO_AGENT_TOKEN=$SUDO_AGENT_TOKEN SUDO_AGENT_PORT=7311"
+AGENT_CMD="$AGENT_CMD SUDO_AGENT_STORE=$AGENT_DIR/store SUDO_STUDIO_LOGS=$AGENT_DIR/logs"
+AGENT_CMD="$AGENT_CMD SUDO_AGENT_PROVIDER='{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}'"
+AGENT_CMD="$AGENT_CMD $BIN $PREFIX/sudo-agent/src/server.js"
+
+: > /tmp/agent.log
+$AGENT_RUN "$AGENT_CMD" > /tmp/agent.log 2>&1 &
+echo $! >> "$PPID_FILE"
 AGENT_UP=0
-AGENT_ROUTE=""
-for route in plain flags; do
-  agent_try "$route"
-  for i in $(seq 1 25); do
-    if curl -sf -m 2 -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -o /dev/null "http://127.0.0.1:7311/health"; then AGENT_UP=1; break; fi
-    sleep 1
-  done
-  [ "$AGENT_UP" = "1" ] && { AGENT_ROUTE="$route"; break; }
-  echo "[DIAG] route $route : agent non demarre (log $(wc -c < /tmp/agent.log) octets)"
-  tail -5 /tmp/agent.log 2>/dev/null | sed 's/^/[DIAG]   /'
-  cleanup
+for i in $(seq 1 45); do
+  if curl -sf -m 2 -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -o /dev/null "http://127.0.0.1:7311/health"; then AGENT_UP=1; break; fi
   sleep 1
 done
 if [ "$AGENT_UP" = "1" ]; then
-  ok "agent demarre via l editeur en mode Node (ELECTRON_RUN_AS_NODE=1, route $AGENT_ROUTE)"
+  ok "agent demarre via l editeur en mode Node (ELECTRON_RUN_AS_NODE=1, $AGENT_MODE)"
 else
+  echo "[DIAG] agent non demarre (log $(wc -c < /tmp/agent.log) octets, $AGENT_MODE)"
+  tail -8 /tmp/agent.log 2>/dev/null | sed 's/^/[DIAG]   /'
+  ls -la "$PREFIX/sudo-agent/src/server.js" 2>/dev/null | sed 's/^/[DIAG]   /' || echo "[DIAG]   server.js absent du paquet"
   ko "agent demarre via l editeur en mode Node" "$(tail -5 /tmp/agent.log | tr '\n' ' ')"
 fi
 
@@ -267,6 +276,8 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
   PROJ=/tmp/p60-projet
   rm -rf "$PROJ"; mkdir -p "$PROJ"
   echo "console.log('x')" > "$PROJ/app.js"
+  # P61: l agent tourne sous un autre utilisateur que celui du harnais.
+  chmod -R 777 "$PROJ" 2>/dev/null || true
   SESS=$(curl -s -X POST -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -H 'Content-Type: application/json' \
     -d "{\"title\":\"p60\",\"projectRoot\":\"$PROJ\"}" "http://127.0.0.1:7311/sessions")
   SID=$(echo "$SESS" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
