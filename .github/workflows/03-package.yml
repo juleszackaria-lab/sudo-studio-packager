@@ -10,8 +10,8 @@ env:
   # P57 pins: workflows 01 + 02 ran on Sudo-studio main 6cc96cc
   # (backend empaquete fonctionnel sur Linux : journaux + donnees).
   # Bump both ids whenever main moves.
-  BACKEND_RUN_ID: "42958049672"
-  RUNTIME_RUN_ID: "42958052108"
+  BACKEND_RUN_ID: "42970069969"
+  RUNTIME_RUN_ID: "42970072455"
 
 jobs:
   build:
