@@ -228,16 +228,37 @@ export SUDO_AGENT_PORT=7311
 export SUDO_AGENT_STORE="$SUDO_STUDIO_HOME/agent-store"
 export SUDO_STUDIO_LOGS="$AGENT_LOG_DIR"
 export SUDO_AGENT_PROVIDER="{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}"
-ELECTRON_RUN_AS_NODE=1 "$BIN" --no-sandbox --user-data-dir "${TMPDIR:-/tmp}/sut-editor-userdata" \
-  "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
-echo $! >> "$PPID_FILE"
+# P61: deux routes essayees, la seconde tracee. En mode Node, l editeur
+# interprete les arguments comme node (pas comme la CLI) : les options de
+# harnais (--no-sandbox / --user-data-dir) n y ont pas leur place, mais la
+# CLI les reclame quand elle s execute en root. On essaie donc sans, puis
+# avec, et on DIT laquelle a servi.
+agent_try() {
+  : > /tmp/agent.log
+  if [ "$1" = "flags" ]; then
+    ELECTRON_RUN_AS_NODE=1 "$BIN" --no-sandbox --user-data-dir "${TMPDIR:-/tmp}/sut-editor-userdata" \
+      "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
+  else
+    ELECTRON_RUN_AS_NODE=1 "$BIN" "$PREFIX/sudo-agent/src/server.js" > /tmp/agent.log 2>&1 &
+  fi
+  echo $! >> "$PPID_FILE"
+}
 AGENT_UP=0
-for i in $(seq 1 45); do
-  if curl -sf -m 2 -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -o /dev/null "http://127.0.0.1:7311/health"; then AGENT_UP=1; break; fi
+AGENT_ROUTE=""
+for route in plain flags; do
+  agent_try "$route"
+  for i in $(seq 1 25); do
+    if curl -sf -m 2 -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -o /dev/null "http://127.0.0.1:7311/health"; then AGENT_UP=1; break; fi
+    sleep 1
+  done
+  [ "$AGENT_UP" = "1" ] && { AGENT_ROUTE="$route"; break; }
+  echo "[DIAG] route $route : agent non demarre (log $(wc -c < /tmp/agent.log) octets)"
+  tail -5 /tmp/agent.log 2>/dev/null | sed 's/^/[DIAG]   /'
+  cleanup
   sleep 1
 done
 if [ "$AGENT_UP" = "1" ]; then
-  ok "agent demarre via l editeur en mode Node (ELECTRON_RUN_AS_NODE=1)"
+  ok "agent demarre via l editeur en mode Node (ELECTRON_RUN_AS_NODE=1, route $AGENT_ROUTE)"
 else
   ko "agent demarre via l editeur en mode Node" "$(tail -5 /tmp/agent.log | tr '\n' ' ')"
 fi
