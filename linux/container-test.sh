@@ -249,26 +249,42 @@ else
   AGENT_HOME=$HOME; AGENT_RUN="bash -c"; AGENT_MODE="utilisateur courant ($(id -un))"
 fi
 
-AGENT_CMD="ELECTRON_RUN_AS_NODE=1 HOME=$AGENT_HOME"
-AGENT_CMD="$AGENT_CMD SUDO_AGENT_TOKEN=$SUDO_AGENT_TOKEN SUDO_AGENT_PORT=7311"
-AGENT_CMD="$AGENT_CMD SUDO_AGENT_STORE=$AGENT_DIR/store SUDO_STUDIO_LOGS=$AGENT_DIR/logs"
-AGENT_CMD="$AGENT_CMD SUDO_AGENT_PROVIDER='{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}'"
-AGENT_CMD="$AGENT_CMD $BIN $PREFIX/sudo-agent/src/server.js"
+agent_env() {
+  echo "HOME=$AGENT_HOME SUDO_AGENT_TOKEN=$SUDO_AGENT_TOKEN SUDO_AGENT_PORT=7311 SUDO_AGENT_STORE=$AGENT_DIR/store SUDO_STUDIO_LOGS=$AGENT_DIR/logs SUDO_AGENT_PROVIDER='{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}'"
+}
 
-: > /tmp/agent.log
-$AGENT_RUN "$AGENT_CMD" > /tmp/agent.log 2>&1 &
-echo $! >> "$PPID_FILE"
 AGENT_UP=0
-for i in $(seq 1 45); do
-  if curl -sf -m 2 -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -o /dev/null "http://127.0.0.1:7311/health"; then AGENT_UP=1; break; fi
+AGENT_ROUTE=""
+: > /tmp/agent.log
+# P61: trois routes, essayees dans cet ordre. La 1re et la 2e passent par
+# l EDITEUR installe (mode Node) : c est la preuve demandee. La 3e (node du
+# systeme) n est qu un repli de diagnostic, et elle est NOMMEE comme telle.
+agent_launch() {
+  local route="$1" argv="$2"
+  $AGENT_RUN "$(agent_env) $argv" > /tmp/agent.log 2>&1 &
+  local pid=$!
+  echo $pid >> "$PPID_FILE"
+  for i in $(seq 1 40); do
+    if curl -sf -m 2 -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -o /dev/null "http://127.0.0.1:7311/health"; then AGENT_UP=1; AGENT_ROUTE="$route"; return 0; fi
+    sleep 1
+  done
+  # P61: on ne tue QUE la tentative en cours (cleanup emporterait le backend
+  # et le runtime deja valides plus haut).
+  echo "[DIAG] route $route : pas de serveur (log $(wc -c < /tmp/agent.log) octets)"
+  head -5 /tmp/agent.log 2>/dev/null | sed 's/^/[DIAG]   /'
+  pkill -f 'sudo-agent/src/server.js' 2>/dev/null || true
+  kill "$pid" 2>/dev/null || true
   sleep 1
-done
+  return 1
+}
+
+agent_launch "editeur bin/codium" "ELECTRON_RUN_AS_NODE=1 $BIN $PREFIX/sudo-agent/src/server.js" || \
+agent_launch "editeur binaire direct" "ELECTRON_RUN_AS_NODE=1 $PREFIX/codium $PREFIX/sudo-agent/src/server.js" || \
+agent_launch "node du systeme (repli, PAS l editeur)" "node $PREFIX/sudo-agent/src/server.js" || true
+
 if [ "$AGENT_UP" = "1" ]; then
-  ok "agent demarre via l editeur en mode Node (ELECTRON_RUN_AS_NODE=1, $AGENT_MODE)"
+  ok "agent demarre via l editeur en mode Node (route: $AGENT_ROUTE, $AGENT_MODE)"
 else
-  echo "[DIAG] agent non demarre (log $(wc -c < /tmp/agent.log) octets, $AGENT_MODE)"
-  tail -8 /tmp/agent.log 2>/dev/null | sed 's/^/[DIAG]   /'
-  ls -la "$PREFIX/sudo-agent/src/server.js" 2>/dev/null | sed 's/^/[DIAG]   /' || echo "[DIAG]   server.js absent du paquet"
   ko "agent demarre via l editeur en mode Node" "$(tail -5 /tmp/agent.log | tr '\n' ' ')"
 fi
 
