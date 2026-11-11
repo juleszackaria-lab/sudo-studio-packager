@@ -293,6 +293,13 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
   # P61: la regle de projet s ecrit dans $HOME/.sudo_studio/agent/rules/ ;
   # le run 42952619370 a rendu 500 "regle de projet non enregistree". On
   # imprime donc ou l agent ecrit et si c est accessible en ecriture.
+  # P61: empreinte du moteur REELLEMENT installe (le correctif P61-5 doit
+  # etre dans le paquet, pas seulement dans le depot).
+  if [ -f "$PREFIX/sudo-agent/src/loop.js" ]; then
+    echo "[DIAG] moteur installe : loop.js $(wc -c < "$PREFIX/sudo-agent/src/loop.js") octets, sha256 $(sha256sum "$PREFIX/sudo-agent/src/loop.js" | cut -c1-16), correctif P61-5 present: $(grep -c 'beforeCalls' "$PREFIX/sudo-agent/src/loop.js")"
+  else
+    echo "[DIAG] moteur installe : $PREFIX/sudo-agent/src/loop.js ABSENT"
+  fi
   echo "[DIAG] agent HOME=$AGENT_HOME ; ecriture regles : $(su "$AGENT_USER" -c "test -w '$AGENT_HOME' && echo ok || echo NON-ACCESSIBLE" 2>/dev/null || echo inconnue)"
   echo "[DIAG] droits projet : $(ls -ld "$PROJ" | cut -d" " -f1,3,4)"
   rm -rf "$PROJ"; mkdir -p "$PROJ"
