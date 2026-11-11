@@ -684,11 +684,13 @@ jobs:
             echo "commit: ${{ needs.guard.outputs.sha }}"
             echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
-            cd out
+            # P61: `cd out` DANS un groupe { } ne cree pas de sous-shell : le
+            # repertoire restait change et le `cat` final cherchait le fichier
+            # au mauvais endroit (run 42925578915). Aucun cd ici.
             while read -r sum name; do
-              sz=$(du -h "$name" | cut -f1)
+              sz=$(du -h "out/$name" | cut -f1)
               echo "- $name : $sz : sha256 $sum"
-            done < SHA256SUMS
+            done < out/SHA256SUMS
           } > ARTIFACT-MANIFEST.md
           cat ARTIFACT-MANIFEST.md
 
