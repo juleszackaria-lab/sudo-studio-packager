@@ -336,7 +336,13 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
     if [ -f "$PROJ/hello-linux.txt" ] && grep -qi "bonjour linux" "$PROJ/hello-linux.txt"; then
       ok "l agent a cree hello-linux.txt avec le bon contenu (approbation accordee)"
     else
-      ko "l agent cree le fichier demande" "fichier absent ou vide (approbations=$APPLY) $(head -c 250 /tmp/turn.sse | tr '\n' ' ')"
+      ko "l agent cree le fichier demande" "fichier absent ou vide (approbations=$APPLY)"
+      echo "[DIAG] contenu du projet apres le tour :"
+      ls -la "$PROJ" 2>&1 | sed 's/^/[DIAG]   /'
+      echo "[DIAG] evenements du tour (tail) :"
+      tail -40 /tmp/turn.sse 2>/dev/null | cut -c1-400 | sed 's/^/[DIAG]   /'
+      echo "[DIAG] journal de l agent (tail) :"
+      tail -20 /tmp/agent.log 2>/dev/null | cut -c1-300 | sed 's/^/[DIAG]   /'
     fi
   fi
 fi
