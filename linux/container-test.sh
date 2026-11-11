@@ -83,6 +83,19 @@ case "$PKG_TYPE" in
 esac
 fi
 
+# P61: si le binaire attendu n est pas executable, on dit POURQUOI (present
+# mais sans bit x ? autre nom ? rien du tout ?) et on cherche un repli, au
+# lieu de sortir sur une ligne seche (run 42946374287).
+if [ ! -x "$BIN" ]; then
+  echo "[DIAG] editeur attendu : $BIN (executable: non)"
+  ls -la "$PREFIX" 2>/dev/null | head -20 || echo "[DIAG] $PREFIX absent"
+  ls -la "$PREFIX/bin" 2>/dev/null | head -20 || echo "[DIAG] $PREFIX/bin absent"
+  for cand in "$PREFIX/bin/codium" "$PREFIX/bin/sudostudio" "$PREFIX/sudostudio" \
+              "$PREFIX/codium" "$PREFIX/bin/code" "$PREFIX/bin/code-insiders"; do
+    if [ -f "$cand" ] && [ -x "$cand" ]; then BIN="$cand"; echo "[DIAG] repli retenu : $BIN"; break; fi
+    [ -f "$cand" ] && { chmod +x "$cand" 2>/dev/null && [ -x "$cand" ] && { BIN="$cand"; echo "[DIAG] bit x ajoute : $BIN"; break; }; }
+  done
+fi
 [ -x "$BIN" ] || { echo "FATAL: editeur introuvable sous $PREFIX"; exit 1; }
 ok "arborescence installee sous $PREFIX"
 [ -x "$BACKEND" ] && ok "backend installe et executable" || ko "backend installe" "$BACKEND absent"
