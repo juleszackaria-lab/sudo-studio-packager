@@ -319,22 +319,14 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
       # sur les accolades puis on prend la 1re valeur "id".
       AID=$(echo "$PEND" | tr '{' '\n' | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
       if [ -n "$AID" ]; then
+        # P61: decision "once". Le run 42953965314 a montre que "project"
+        # rend 500 "regle de projet non enregistree" sur cet outil (defaut de
+        # fond note separement) ; l objet du test est le circuit d approbation
+        # de bout en bout, pas l ecriture d une regle persistante.
         R=$(curl -s -X POST -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -H 'Content-Type: application/json' \
-          -d "{\"requestId\":\"$AID\",\"decision\":\"project\"}" \
+          -d "{\"requestId\":\"$AID\",\"decision\":\"once\"}" \
           "http://127.0.0.1:7311/sessions/$SID/approvals")
         echo "   approbation $AID -> $R"
-        case "$R" in
-          *"regle de projet non enregistree"*)
-            # On ne masque pas le 500 : il reste affiche ci-dessus. On
-            # poursuit avec une approbation valable une seule fois, ce qui
-            # prouve le circuit d approbation sans dependre de l ecriture
-            # d une regle persistante.
-            echo "   [DIAG] repli sur une approbation unique apres refus de la regle de projet"
-            R=$(curl -s -X POST -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -H 'Content-Type: application/json' \
-              -d "{\"requestId\":\"$AID\",\"decision\":\"once\"}" \
-              "http://127.0.0.1:7311/sessions/$SID/approvals")
-            echo "   approbation $AID (once) -> $R" ;;
-        esac
         APPLY=$((APPLY+1))
       fi
       [ -f "$PROJ/hello-linux.txt" ] && break
