@@ -208,6 +208,14 @@ if [ "$LOADED" = "1" ]; then
   ok "modele charge (${VARIANT_USED:-variante non journalisee})"
 else
   ko "modele charge" "$(grep -iE 'error|erreur|mock|failed' /tmp/runtime.log | tail -3 | tr '\n' ' ')"
+  # P62: dire POURQUOI le modele n a pas ete charge (HOME reel, contenu du
+  # dossier de modeles, journal de detection complet, espace disque).
+  echo "[DIAG] HOME=$HOME MODELS=$HOME/.sudo_studio/models MODEL_ARG=$MODEL"
+  ls -la "$HOME/.sudo_studio/models" 2>&1 | head -10
+  echo "[DIAG] detection : $(head -c 1200 /tmp/health-runtime.json 2>/dev/null)"
+  echo "[DIAG] disque : $(df -h "$HOME" 2>/dev/null | tail -1)"
+  echo "[DIAG] runtime.log (30 dernieres lignes) :"
+  tail -30 /tmp/runtime.log | cut -c1-220
 fi
 
 MODEL_ID=$(curl -sf -m 5 "$RURL/v1/models" 2>/dev/null | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
