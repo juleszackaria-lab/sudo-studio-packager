@@ -178,12 +178,40 @@ fi
 # ------------------------------------------------------ 3. runtime + modele
 head1 "runtime et modele"
 RURL="http://127.0.0.1:6000"
+# P62: le runtime resout ~/.sudo_studio/models avec le dossier personnel du
+# COMPTE (os.path.expanduser), pas avec la variable HOME. Les deux doivent
+# donc designer le meme dossier, sinon la copie du modele passe inapercue et
+# le chargement echoue (run 43461006759, phase hors ligne). On impose le
+# dossier reel du compte a TOUT le processus (backend, agent, runtime).
+RTHOME=$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)
+[ -n "$RTHOME" ] || RTHOME="$HOME"
+export HOME="$RTHOME"
+MODELS_DIR="$HOME/.sudo_studio/models"
+mkdir -p "$MODELS_DIR"
+echo "   dossier personnel utilise : $HOME (modeles : $MODELS_DIR)"
 if [ -n "$MODEL" ] && [ -f "$MODEL" ]; then
-  mkdir -p "$HOME/.sudo_studio/models"
-  cp "$MODEL" "$HOME/.sudo_studio/models/" 2>/dev/null || true
+  NEED_KB=$(( $(stat -c %s "$MODEL") / 1024 + 1024 ))
+  FREE_KB=$(df -Pk "$HOME" | awk 'NR==2 {print $4}')
+  echo "   place libre dans $HOME : $((FREE_KB / 1024)) Mo (modele : $((NEED_KB / 1024)) Mo)"
+  if [ "$FREE_KB" -lt "$NEED_KB" ]; then
+    ko "copie du modele de test" "place insuffisante dans $HOME ($((FREE_KB / 1024)) Mo libres)"
+  else
+    if cp "$MODEL" "$MODELS_DIR/" 2>/tmp/cp-model.log; then
+      # Verification REELLE : meme taille, sinon la copie est un echec.
+      if [ "$(stat -c %s "$MODEL")" = "$(stat -c %s "$MODELS_DIR/$(basename "$MODEL")")" ]; then
+        ok "modele de test copie dans $MODELS_DIR ($((NEED_KB / 1024)) Mo)"
+      else
+        ko "copie du modele de test" "taille differente apres copie"
+      fi
+    else
+      ko "copie du modele de test" "$(tail -2 /tmp/cp-model.log | tr '\n' ' ')"
+    fi
+  fi
+else
+  ko "modele de test fourni" "--model absent ou illisible : $MODEL"
 fi
 if [ -n "$VARIANT" ]; then export SUDO_LLAMACPP_VARIANT="$VARIANT"; fi
-"$RUNTIME" --port 6000 > /tmp/runtime.log 2>&1 &
+HOME="$RTHOME" "$RUNTIME" --port 6000 > /tmp/runtime.log 2>&1 &
 echo $! >> "$PPID_FILE"
 RFOUND=0
 for i in $(seq 1 120); do
@@ -210,8 +238,8 @@ else
   ko "modele charge" "$(grep -iE 'error|erreur|mock|failed' /tmp/runtime.log | tail -3 | tr '\n' ' ')"
   # P62: dire POURQUOI le modele n a pas ete charge (HOME reel, contenu du
   # dossier de modeles, journal de detection complet, espace disque).
-  echo "[DIAG] HOME=$HOME MODELS=$HOME/.sudo_studio/models MODEL_ARG=$MODEL"
-  ls -la "$HOME/.sudo_studio/models" 2>&1 | head -10
+  echo "[DIAG] HOME=$HOME (compte : $RTHOME) MODELS=$MODELS_DIR MODEL_ARG=$MODEL"
+  ls -la "$MODELS_DIR" 2>&1 | head -10
   echo "[DIAG] detection : $(head -c 1200 /tmp/health-runtime.json 2>/dev/null)"
   echo "[DIAG] disque : $(df -h "$HOME" 2>/dev/null | tail -1)"
   echo "[DIAG] runtime.log (30 dernieres lignes) :"

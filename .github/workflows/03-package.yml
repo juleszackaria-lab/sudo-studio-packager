@@ -1,9 +1,12 @@
 name: SudoStudio Stable Build
 
 on:
+  # P62: plus AUCUN build automatique sur simple push. Un push de
+  # correction ne doit pas lancer un paquet Windows de 90 minutes : le paquet
+  # part UNIQUEMENT quand on le demande (fin de session / prompt), ou sur un
+  # tag de version.
   workflow_dispatch:
   push:
-    branches: [main]
     tags: ['v*']
 
 env:
