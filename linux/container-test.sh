@@ -5,7 +5,7 @@
 # the packaged runtime binary.
 #
 #   container-test.sh --pkg-type deb|rpm|tar --pkg <file> --model <gguf>
-#                     [--offline] [--variant avx2|compat] [--keep]
+#                     [--offline] [--install-only] [--variant avx2|compat] [--keep]
 #
 # Prints "PASS <name>" / "FAIL <name> :: detail" for every check and exits
 # non-zero if any check failed. No check is skipped silently: an impossible
@@ -19,6 +19,7 @@ while [ $# -gt 0 ]; do
     --pkg) PKG=$2; shift 2 ;;
     --model) MODEL=$2; shift 2 ;;
     --offline) OFFLINE=1; shift ;;
+    --install-only) INSTALL_ONLY=1; shift ;;  # P62: n installe que (pour docker commit)
     --variant) VARIANT=$2; shift 2 ;;
     --keep) KEEP=1; shift ;;
     *) echo "unknown arg $1"; exit 2 ;;
@@ -113,6 +114,16 @@ if [ "$PKG_TYPE" != "tar" ]; then
     && ok ".desktop pointe sur le lanceur" || ko ".desktop pointe sur le lanceur" "$(head -3 /usr/share/applications/sudo-studio.desktop 2>/dev/null)"
   [ -f "$PREFIX/THIRD_PARTY_NOTICES.md" ] || [ -f /usr/share/doc/sudo-studio/THIRD_PARTY_NOTICES.md ] \
     && ok "THIRD_PARTY_NOTICES inclus" || ko "THIRD_PARTY_NOTICES inclus" "absent"
+fi
+
+# P62: mode "installation seule". La phase 2 hors ligne doit tourner sur une
+# image ou le produit est REELLEMENT installe. La phase 1 teste aussi la
+# DESINSTALLATION, donc son conteneur n a plus le produit a la fin : commit
+# d un conteneur dedie, installe et intact.
+if [ "$INSTALL_ONLY" = "1" ]; then
+  echo "== INSTALLATION SEULE : produit installe sous $PREFIX, aucun test execute =="
+  echo "== RESULTAT : installation seule, 0 FAIL =="
+  exit 0
 fi
 
 # ------------------------------------------------------ 1. headless editor

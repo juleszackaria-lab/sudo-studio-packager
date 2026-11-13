@@ -210,11 +210,32 @@ jobs:
           echo "exit=$rc" | tee -a phase1.log
           exit $rc
 
+      - name: Phase 2a - install-only image (produit installe, aucun test)
+        shell: bash
+        run: |
+          set -o pipefail
+          # P62: la phase 1 teste AUSSI la desinstallation, donc son conteneur
+          # n a plus le produit. On prepare une image dediee, installee et
+          # intacte, pour prouver le fonctionnement SANS reseau.
+          PKG=$(find pkg -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \) -print | head -1)
+          test -n "$PKG" || { echo '[FAIL] aucun paquet dans pkg/'; exit 1; }
+          docker rm -f sut2 >/dev/null 2>&1 || true
+          docker run --name sut2 \
+            -v "$PWD/pkg:/pkg:ro" \
+            -v "$PWD/model:/model:ro" \
+            -v "$PWD:/work:ro" \
+            "${{ matrix.image }}" \
+            bash -lc '${{ matrix.prepare }} && bash /work/linux/container-test.sh --install-only --pkg-type ${{ matrix.pkg_type }} --pkg "/pkg/$(basename '"$PKG"')" --model /model/test-model.gguf --variant ${{ matrix.variant }}' \
+            2>&1 | tee phase2a-install.log
+          rc=${PIPESTATUS[0]}
+          echo "exit=$rc" | tee -a phase2a-install.log
+          exit $rc
+
       - name: Phase 2 - same installed tree, no network at all (docker commit)
         shell: bash
         run: |
           set -o pipefail
-          docker commit sut "sut-offline:${{ strategy.job-index }}"
+          docker commit sut2 "sut-offline:${{ strategy.job-index }}"
           docker run --rm --network none \
             -v "$PWD/pkg:/pkg:ro" \
             -v "$PWD/model:/model:ro" \
@@ -232,7 +253,7 @@ jobs:
         run: |
           set -euo pipefail
           fail=0
-          for f in phase1.log phase2-offline.log; do
+          for f in phase1.log phase2a-install.log phase2-offline.log; do
             [ -f "$f" ] || { echo "[FAIL] $f absent"; fail=1; continue; }
             echo "----- $f -----"
             grep -E '^(PASS|FAIL|== RESULTAT)' "$f" || true
@@ -253,6 +274,7 @@ jobs:
           name: P60-smoke-${{ strategy.job-index }}
           path: |
             phase1.log
+            phase2a-install.log
             phase2-offline.log
           if-no-files-found: warn
           retention-days: 30
