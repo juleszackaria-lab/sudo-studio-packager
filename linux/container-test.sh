@@ -49,6 +49,45 @@ echo "=== Sudo Studio container smoke test ==="
 echo "pkg-type=$PKG_TYPE pkg=$PKG offline=$OFFLINE variant=${VARIANT:-auto}"
 echo "os: $( (. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || uname -a)"
 
+# ------------------------------------------ 0a. dependances d execution (P62)
+# Les images de test sont BARE : ni GTK ni glib ni libgbm. Un poste de travail
+# reel les a. Sans elles, l editeur ne demarre pas (libglib-2.0.so.0 absent) et
+# le .rpm ne s installe meme pas ("nothing provides gbm"). On installe donc la
+# liste publique des dependances d execution AVANT le paquet, en le disant :
+# le test prouve ensuite que le produit fonctionne avec ses dependances
+# documentees, il ne pretend pas qu un conteneur nu suffit.
+head1 "dependances d execution"
+DEPS_APT="libglib2.0-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 libgtk-3-0 libx11-xcb1 libxshmfence1"
+DEPS_DNF="glib2 nss atk at-spi2-atk cups-libs libdrm libxkbcommon libXcomposite libXdamage libXfixes libXrandr mesa-libgbm alsa-lib pango cairo gtk3 libxshmfence"
+if [ "$OFFLINE" = "1" ]; then
+  ok "phase hors ligne : dependances deja presentes dans l image (aucune installation)"
+elif command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq >/dev/null 2>&1 || true
+  # libasound2t64 (ubuntu 24.04) remplace libasound2 : on accepte les deux.
+  if apt-get install -y -qq $DEPS_APT > /tmp/deps.log 2>&1; then
+    ok "dependances d execution installees (apt) : $(echo $DEPS_APT | wc -w) paquets"
+  elif apt-get install -y -qq $(echo $DEPS_APT | sed 's/libasound2/libasound2t64/') > /tmp/deps.log 2>&1; then
+    ok "dependances d execution installees (apt, libasound2t64)"
+  else
+    ko "dependances d execution (apt)" "$(tail -3 /tmp/deps.log | tr '\n' ' ')"
+  fi
+elif command -v dnf >/dev/null 2>&1; then
+  if dnf install -y -q --setopt=install_weak_deps=False $DEPS_DNF > /tmp/deps.log 2>&1; then
+    ok "dependances d execution installees (dnf) : $(echo $DEPS_DNF | wc -w) paquets"
+  else
+    ko "dependances d execution (dnf)" "$(tail -3 /tmp/deps.log | tr '\n' ' ')"
+  fi
+elif command -v microdnf >/dev/null 2>&1; then
+  if microdnf install -y $DEPS_DNF > /tmp/deps.log 2>&1; then
+    ok "dependances d execution installees (microdnf)"
+  else
+    ko "dependances d execution (microdnf)" "$(tail -3 /tmp/deps.log | tr '\n' ' ')"
+  fi
+else
+  echo "[WARN] aucun gestionnaire de paquets connu : dependances non installees"
+fi
+
 # ---------------------------------------------------------------- 0. install
 head1 "installation"
 if [ "$OFFLINE" = "1" ]; then
