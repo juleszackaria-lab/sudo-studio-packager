@@ -10,11 +10,11 @@ on:
     tags: ['v*']
 
 env:
-  # P57 pins: workflows 01 + 02 ran on Sudo-studio main 6cc96cc
-  # (backend empaquete fonctionnel sur Linux : journaux + donnees).
+  # P62 pins: workflows 01 + 02 ran on Sudo-studio main e6c3d48
+  # (veille B3, RAM C1-C3, cahiers F, refus F2, cible F4, GBNF).
   # Bump both ids whenever main moves.
-  BACKEND_RUN_ID: "43443345428"
-  RUNTIME_RUN_ID: "43443350443"
+  BACKEND_RUN_ID: "43480711845"
+  RUNTIME_RUN_ID: "43480715460"
 
 jobs:
   build:
