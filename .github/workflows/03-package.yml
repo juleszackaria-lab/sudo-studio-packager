@@ -65,6 +65,33 @@ jobs:
             exit /b 1
           )
 
+      # -- 2b. P62-G: analyse syntaxique de TOUS les scripts PowerShell --------
+      # Un .ps1 casse ne doit plus se decouvrir a la fin du paquet : on parse
+      # chaque fichier avec le vrai analyseur PowerShell et on echoue tout de
+      # suite, avec le fichier, la ligne et le message.
+      - name: Analyse syntaxique PowerShell (P62-G)
+        shell: powershell
+        run: |
+          $bad = 0
+          $files = Get-ChildItem -Path _sudo-studio-source -Recurse -Filter *.ps1 -File -ErrorAction SilentlyContinue
+          if (-not $files -or $files.Count -eq 0) {
+            Write-Error "[FAIL] aucun script .ps1 trouve : le controle ne peut rien prouver"
+            exit 1
+          }
+          foreach ($f in $files) {
+            $errors = $null
+            $tokens = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors -and $errors.Count -gt 0) {
+              $bad += 1
+              foreach ($e in $errors) {
+                Write-Host ("[FAIL] " + $f.FullName + " ligne " + $e.Extent.StartLineNumber + " : " + $e.Message)
+              }
+            }
+          }
+          Write-Host ("[OK] analyse syntaxique PowerShell : " + $files.Count + " script(s), " + $bad + " en echec")
+          if ($bad -gt 0) { exit 1 }
+
       # -- 3. Download backend.exe ----------------------------------------------
       - name: Download backend.exe (by run ID)
         uses: dawidd6/action-download-artifact@v5
