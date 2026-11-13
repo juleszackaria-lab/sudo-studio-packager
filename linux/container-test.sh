@@ -233,7 +233,7 @@ export SUDO_AGENT_PROVIDER="{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":
 # options n ont aucun sens en mode Node (elles sont parlees par node, pas par
 # la CLI) : d ou un journal vide et aucun serveur (run 42949351951).
 AGENT_DIR=/tmp/sut-agent
-mkdir -p "$AGENT_DIR/store" "$AGENT_DIR/logs"
+mkdir -p "$AGENT_DIR/store" "$AGENT_DIR/logs" "$AGENT_DIR/home"
 if [ "$(id -u)" = "0" ]; then
   AGENT_USER=${SUDO_TEST_USER:-sutuser}
   id "$AGENT_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$AGENT_USER" 2>/dev/null || true
@@ -250,7 +250,13 @@ else
 fi
 
 agent_env() {
-  echo "HOME=$AGENT_HOME SUDO_AGENT_TOKEN=$SUDO_AGENT_TOKEN SUDO_AGENT_PORT=7311 SUDO_AGENT_STORE=$AGENT_DIR/store SUDO_STUDIO_LOGS=$AGENT_DIR/logs SUDO_AGENT_PROVIDER='{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}'"
+  # P61 (run 42971420882, job ubuntu-22.04) : la re-execution approuvee
+  # echouait avec code=checkpoint / EACCES mkdir
+  # '/root/.local/share/sudo-studio/.sudo_studio/agent/checkpoints/<session>'
+  # parce que l agent heritait du SUDO_STUDIO_HOME de root en tournant sous
+  # sutuser. Le moteur exige un instantane AVANT la premiere mutation (garde
+  # de securite conservee) : on lui donne donc un dossier d etat a lui.
+  echo "SUDO_STUDIO_HOME=$AGENT_DIR/home HOME=$AGENT_HOME SUDO_AGENT_TOKEN=$SUDO_AGENT_TOKEN SUDO_AGENT_PORT=7311 SUDO_AGENT_STORE=$AGENT_DIR/store SUDO_STUDIO_LOGS=$AGENT_DIR/logs SUDO_AGENT_PROVIDER='{\"type\":\"local\",\"baseUrl\":\"$RURL\",\"model\":\"$MODEL_ID\"}'"
 }
 
 AGENT_UP=0
