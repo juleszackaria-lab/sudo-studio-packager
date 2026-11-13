@@ -12,7 +12,7 @@
 # check is a FAIL with its reason.
 set -uo pipefail
 
-PKG_TYPE=""; PKG=""; MODEL=""; OFFLINE=0; VARIANT=""; KEEP=0
+PKG_TYPE=""; PKG=""; MODEL=""; OFFLINE=0; INSTALL_ONLY=0; VARIANT=""; KEEP=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --pkg-type) PKG_TYPE=$2; shift 2 ;;
