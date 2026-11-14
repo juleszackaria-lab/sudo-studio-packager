@@ -10,11 +10,16 @@ on:
     tags: ['v*']
 
 env:
-  # P62 pins: workflows 01 + 02 ran on Sudo-studio main e6c3d48
-  # (veille B3, RAM C1-C3, cahiers F, refus F2, cible F4, GBNF).
-  # Bump both ids whenever main moves.
-  BACKEND_RUN_ID: "43480711845"
-  RUNTIME_RUN_ID: "43480715460"
+  # P63-B pins: workflows 01 + 02 ont tourne sur la branche p60-linux au
+  # commit bed7d65 (P63 : reprise deterministe, delais coherents, etat hors
+  # projet, JSON non rejete, journal de rejet, budget total resumable).
+  # Bump both ids AND SUDO_STUDIO_REF together whenever the reference moves.
+  BACKEND_RUN_ID: "43624496713"
+  RUNTIME_RUN_ID: "43624498463"
+  # Branche de reference du code Sudo-studio (main par defaut). Le travail P63
+  # n'est PAS fusionne dans main : le paquet est donc construit depuis la
+  # branche, et le garde-fou compare les pins a CETTE branche.
+  SUDO_STUDIO_REF: "p60-linux"
 
 jobs:
   build:
@@ -37,7 +42,7 @@ jobs:
         with:
           repository: juleszackaria-lab/Sudo-studio
           path: _sudo-studio-source
-          ref: main
+          ref: ${{ env.SUDO_STUDIO_REF }}
           fetch-depth: 0
           token: ${{ secrets.PAT }}
 
@@ -733,7 +738,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: juleszackaria-lab/Sudo-studio
-          ref: main
+          ref: ${{ env.SUDO_STUDIO_REF }}
           path: _sudo-studio-source
       - name: Run installer smoke test (full)
         shell: powershell
@@ -850,7 +855,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: juleszackaria-lab/Sudo-studio
-          ref: main
+          ref: ${{ env.SUDO_STUDIO_REF }}
           path: _sudo-studio-source
       - name: Setup Node.js
         uses: actions/setup-node@v4

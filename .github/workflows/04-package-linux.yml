@@ -32,8 +32,11 @@ env:
   SUDO_STUDIO_REPO: juleszackaria-lab/Sudo-studio
   # Reference runs (workflows 01 + 02 of Sudo-studio). They define the commit
   # this Linux build is made from. Bump these two ids whenever main moves.
-  BACKEND_RUN_ID: "43443345428"
-  RUNTIME_RUN_ID: "43443350443"
+  # P63-B pins : memes runs 01 + 02 que le paquet Windows (branche p60-linux,
+  # commit bed7d65). Bump les deux ids ET SUDO_STUDIO_REF ensemble.
+  BACKEND_RUN_ID: "43624496713"
+  RUNTIME_RUN_ID: "43624498463"
+  SUDO_STUDIO_REF: "p60-linux"
   EDITOR_VERSION: "1.97.2.25045"
   NODE_VERSION: "18"
   PYTHON_VERSION: "3.11"
@@ -56,8 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/$SUDO_STUDIO_REPO"
-          main_sha=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" "$api/commits/main" | jq -r .sha)
-          echo "[INFO] Sudo-studio main = $main_sha"
+          ref_sha=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" "$api/commits/$SUDO_STUDIO_REF" | jq -r .sha)
+          echo "[INFO] Sudo-studio $SUDO_STUDIO_REF = $ref_sha"
           sha=""
           fail=0
           for pair in "BACKEND:$BACKEND_RUN_ID" "RUNTIME:$RUNTIME_RUN_ID"; do
@@ -78,13 +81,13 @@ jobs:
               fail=1
             fi
           done
-          if [ -n "$sha" ] && [ "$sha" != "$main_sha" ]; then
-            echo "[FAIL] pinned runs are built from $sha but main is $main_sha"
-            echo "       re-run workflows 01 + 02 on main, then bump BACKEND_RUN_ID/RUNTIME_RUN_ID"
+          if [ -n "$sha" ] && [ "$sha" != "$ref_sha" ]; then
+            echo "[FAIL] pinned runs are built from $sha but $SUDO_STUDIO_REF is $ref_sha"
+            echo "       re-run workflows 01 + 02 on $SUDO_STUDIO_REF, then bump BACKEND_RUN_ID/RUNTIME_RUN_ID"
             fail=1
           fi
           if [ "$fail" -ne 0 ]; then exit 1; fi
-          echo "[OK] both runs are green on main ($sha)"
+          echo "[OK] both runs are green on $SUDO_STUDIO_REF ($sha)"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Summary
