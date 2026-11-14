@@ -34,9 +34,9 @@ env:
   # this Linux build is made from. Bump these two ids whenever main moves.
   # P63-B pins : memes runs 01 + 02 que le paquet Windows (branche p60-linux,
   # commit bed7d65). Bump les deux ids ET SUDO_STUDIO_REF ensemble.
-  BACKEND_RUN_ID: "43624496713"
-  RUNTIME_RUN_ID: "43624498463"
-  SUDO_STUDIO_REF: "p60-linux"
+  BACKEND_RUN_ID: "43625620975"
+  RUNTIME_RUN_ID: "43625623209"
+  SUDO_STUDIO_REF: "4487a8d40c1f6dc5b52d2d6c0daa3d5995a01ee0"
   EDITOR_VERSION: "1.97.2.25045"
   NODE_VERSION: "18"
   PYTHON_VERSION: "3.11"

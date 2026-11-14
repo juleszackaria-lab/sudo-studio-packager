@@ -14,12 +14,12 @@ env:
   # commit bed7d65 (P63 : reprise deterministe, delais coherents, etat hors
   # projet, JSON non rejete, journal de rejet, budget total resumable).
   # Bump both ids AND SUDO_STUDIO_REF together whenever the reference moves.
-  BACKEND_RUN_ID: "43624496713"
-  RUNTIME_RUN_ID: "43624498463"
+  BACKEND_RUN_ID: "43625620975"
+  RUNTIME_RUN_ID: "43625623209"
   # Branche de reference du code Sudo-studio (main par defaut). Le travail P63
   # n'est PAS fusionne dans main : le paquet est donc construit depuis la
   # branche, et le garde-fou compare les pins a CETTE branche.
-  SUDO_STUDIO_REF: "p60-linux"
+  SUDO_STUDIO_REF: "4487a8d40c1f6dc5b52d2d6c0daa3d5995a01ee0"
 
 jobs:
   build:
