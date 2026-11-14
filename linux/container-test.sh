@@ -405,12 +405,18 @@ if [ "$AGENT_UP" = "1" ] && [ "$LOADED" = "1" ]; then
   if [ -n "$SID" ]; then
     # The turn streams (SSE) and PAUSES on the write approval: the request stays
     # open while we approve, which is exactly the human-in-the-loop path.
-    ( timeout 300 curl -s -N -X POST -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -H 'Content-Type: application/json' \
+    # P63-B: sur un CPU sans GPU, le modele 1.5B enchaine jusqu a 3 tentatives
+    # d appel d outil (essai contraint, essai avec max_tokens double si la
+    # sortie a ete coupee, essai non contraint). 300 s ne suffisaient plus :
+    # le tour etait encore en generation quand le harnais abandonnait, ce qui
+    # se lisait a tort comme "l agent n a rien fait". La fenetre passe a 900 s,
+    # le controle reste le meme (fichier cree + approbation accordee).
+    ( timeout 900 curl -s -N -X POST -H "Authorization: Bearer $SUDO_AGENT_TOKEN" -H 'Content-Type: application/json' \
         -d '{"prompt":"Cree le fichier hello-linux.txt a la racine du projet, contenant exactement: bonjour linux"}' \
         "http://127.0.0.1:7311/sessions/$SID/messages" > /tmp/turn.sse 2>&1 ) &
     TURN_PID=$!
     APPLY=0
-    for i in $(seq 1 60); do
+    for i in $(seq 1 300); do
       PEND=$(curl -s -H "Authorization: Bearer $SUDO_AGENT_TOKEN" "http://127.0.0.1:7311/sessions/$SID/approvals")
       # P61: l extraction precedente imprimait la ligne ENTIERE (motif non
       # ancre), donc l identifiant envoye etait illisible -> "corps JSON
