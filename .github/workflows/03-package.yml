@@ -14,12 +14,12 @@ env:
   # commit bed7d65 (P63 : reprise deterministe, delais coherents, etat hors
   # projet, JSON non rejete, journal de rejet, budget total resumable).
   # Bump both ids AND SUDO_STUDIO_REF together whenever the reference moves.
-  BACKEND_RUN_ID: "43625620975"
-  RUNTIME_RUN_ID: "43625623209"
+  BACKEND_RUN_ID: "43628890594"
+  RUNTIME_RUN_ID: "43628892143"
   # Branche de reference du code Sudo-studio (main par defaut). Le travail P63
   # n'est PAS fusionne dans main : le paquet est donc construit depuis la
   # branche, et le garde-fou compare les pins a CETTE branche.
-  SUDO_STUDIO_REF: "4487a8d40c1f6dc5b52d2d6c0daa3d5995a01ee0"
+  SUDO_STUDIO_REF: "84e4a88489efa84044109a69d9ca5ddd70d3977a"
 
 jobs:
   build:
@@ -127,8 +127,11 @@ jobs:
         run: |
           $repo = "juleszackaria-lab/Sudo-studio"
           $headers = @{ Authorization = "Bearer ${{ secrets.PAT }}"; Accept = "application/vnd.github+json" }
-          $mainSha = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/commits/main" -Headers $headers).sha
-          Write-Host "[INFO] Sudo-studio main = $mainSha"
+          # P63-B : la reference n est plus forcement main (le travail P63 ne
+          # doit PAS etre fusionne dans main sans ordre explicite). Le garde-fou
+          # compare les pins au commit de SUDO_STUDIO_REF.
+          $mainSha = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/commits/$env:SUDO_STUDIO_REF" -Headers $headers).sha
+          Write-Host "[INFO] Sudo-studio $env:SUDO_STUDIO_REF = $mainSha"
           $stale = $false
           foreach ($pair in @(@("BACKEND", $env:BACKEND_RUN_ID), @("RUNTIME", $env:RUNTIME_RUN_ID))) {
             $run = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/actions/runs/$($pair[1])" -Headers $headers
@@ -137,7 +140,7 @@ jobs:
               Write-Error ("[FAIL] run {0} conclusion is '{1}' -- re-run workflow 01/02 first" -f $pair[1], $run.conclusion)
               $stale = $true
             } elseif ($run.head_sha -ne $mainSha) {
-              Write-Error ("[FAIL] {0}_RUN_ID={1} was built from {2}, but main is {3} -- re-run workflows 01+02, then bump the pin" -f $pair[0], $pair[1], $run.head_sha, $mainSha)
+              Write-Error ("[FAIL] {0}_RUN_ID={1} was built from {2}, but {4} is {3} -- re-run workflows 01+02, then bump the pin" -f $pair[0], $pair[1], $run.head_sha, $mainSha, $env:SUDO_STUDIO_REF)
               $stale = $true
             }
           }
