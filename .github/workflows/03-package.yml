@@ -21,7 +21,7 @@ env:
   # Reference du code Sudo-studio : la TETE de main au moment des builds 01/02.
   # P69 : tout le travail est sur main (aucune branche), donc le paquet est
   # construit depuis main et le garde-fou compare les pins a ce commit.
-  SUDO_STUDIO_REF: "bd18945"
+  SUDO_STUDIO_REF: "bd18945b6cd76d434b32b2288d9b96f9f0f59eb2"
 
 jobs:
   build:
