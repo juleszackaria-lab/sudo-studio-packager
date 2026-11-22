@@ -10,16 +10,18 @@ on:
     tags: ['v*']
 
 env:
-  # P63-B pins: workflows 01 + 02 ont tourne sur la branche p60-linux au
-  # commit bed7d65 (P63 : reprise deterministe, delais coherents, etat hors
-  # projet, JSON non rejete, journal de rejet, budget total resumable).
+  # P69 pins: workflows 01 + 02 ont tourne sur Sudo-studio main 683ea5a
+  # (P67 catalogue, P68 grammaire + fenetre de contexte, P69 : medecine
+  # legale, battement de coeur, superviseur qui nomme le code de sortie,
+  # fusion des chargements, message RAM, et C7 - le moteur tourne dans un
+  # processus enfant, l'API survit a son plantage).
   # Bump both ids AND SUDO_STUDIO_REF together whenever the reference moves.
-  BACKEND_RUN_ID: "44301606532"
-  RUNTIME_RUN_ID: "44301615194"
-  # Branche de reference du code Sudo-studio (main par defaut). Le travail P63
-  # n'est PAS fusionne dans main : le paquet est donc construit depuis la
-  # branche, et le garde-fou compare les pins a CETTE branche.
-  SUDO_STUDIO_REF: "5e7456851e09becb9ceaae0919165d18f01a6b6d"
+  BACKEND_RUN_ID: "45001469991"
+  RUNTIME_RUN_ID: "45001471612"
+  # Reference du code Sudo-studio : la TETE de main au moment des builds 01/02.
+  # P69 : tout le travail est sur main (aucune branche), donc le paquet est
+  # construit depuis main et le garde-fou compare les pins a ce commit.
+  SUDO_STUDIO_REF: "bd18945"
 
 jobs:
   build:
