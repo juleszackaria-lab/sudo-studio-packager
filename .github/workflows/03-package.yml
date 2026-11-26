@@ -10,7 +10,7 @@ on:
     tags: ['v*']
 
 env:
-  # P71 pins: workflows 01 + 02 ont tourne sur Sudo-studio main db63f5d
+  # P71 pins: workflows 01 + 02 ont tourne sur Sudo-studio main 21e2569
   # (P70 chemin rapide sans modele + P71 recommandations deterministes,
   #  enrichissement IA borne, AutoFix verifie, Doctor registre, AutoFix npm).
   # (P67 catalogue, P68 grammaire + fenetre de contexte, P69 : medecine
@@ -23,7 +23,7 @@ env:
   # Reference du code Sudo-studio : la TETE de main au moment des builds 01/02.
   # P69 : tout le travail est sur main (aucune branche), donc le paquet est
   # construit depuis main et le garde-fou compare les pins a ce commit.
-  SUDO_STUDIO_REF: "db63f5d243d5ea2213c9207a9c03853d272bd445"
+  SUDO_STUDIO_REF: "21e2569d256399d2a338804e9831f30896fe74e0"
 
 jobs:
   build:
@@ -136,6 +136,14 @@ jobs:
           # compare les pins au commit de SUDO_STUDIO_REF.
           $mainSha = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/commits/$env:SUDO_STUDIO_REF" -Headers $headers).sha
           Write-Host "[INFO] Sudo-studio $env:SUDO_STUDIO_REF = $mainSha"
+          # P71 (optimisation demandee) : on ne reconstruit PLUS backend et
+          # runtime a chaque fois. Un pin peut etre plus ancien que la reference
+          # A CONDITION qu AUCUN fichier source de ce composant n ait change
+          # entre le commit du run et la reference. La preuve est affichee.
+          #   - backend  : backend/** sauf backend/runtime/**
+          #   - runtime  : backend/runtime/**
+          # Si un fichier source a bouge, ou si le diff est trop gros pour etre
+          # lisible, on ECHOUE comme avant : aucune protection retiree.
           $stale = $false
           foreach ($pair in @(@("BACKEND", $env:BACKEND_RUN_ID), @("RUNTIME", $env:RUNTIME_RUN_ID))) {
             $run = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/actions/runs/$($pair[1])" -Headers $headers
@@ -143,13 +151,43 @@ jobs:
             if ($run.conclusion -ne "success") {
               Write-Error ("[FAIL] run {0} conclusion is '{1}' -- re-run workflow 01/02 first" -f $pair[1], $run.conclusion)
               $stale = $true
-            } elseif ($run.head_sha -ne $mainSha) {
-              Write-Error ("[FAIL] {0}_RUN_ID={1} was built from {2}, but {4} is {3} -- re-run workflows 01+02, then bump the pin" -f $pair[0], $pair[1], $run.head_sha, $mainSha, $env:SUDO_STUDIO_REF)
+              continue
+            }
+            if ($run.head_sha -eq $mainSha) {
+              Write-Host ("[OK] {0} : artefact construit EXACTEMENT sur la reference" -f $pair[0])
+              continue
+            }
+            $cmpUrl = "https://api.github.com/repos/$repo/compare/$($run.head_sha)...$mainSha"
+            $cmp = $null
+            try { $cmp = Invoke-RestMethod -Uri $cmpUrl -Headers $headers } catch {
+              Write-Error ("[FAIL] {0}_RUN_ID={1} : comparaison impossible ({2}) -- on ne publie pas a l aveugle" -f $pair[0], $pair[1], $_.Exception.Message)
               $stale = $true
+              continue
+            }
+            $files = @()
+            if ($cmp.files) { $files = @($cmp.files | ForEach-Object { $_.filename }) }
+            if ($files.Count -ge 300) {
+              Write-Error ("[FAIL] {0} : diff trop gros ({1} commits) pour prouver l absence de changement -- reconstruire" -f $pair[0], $cmp.total_commits)
+              $stale = $true
+              continue
+            }
+            $relevant = @()
+            foreach ($f in $files) {
+              if ($pair[0] -eq "BACKEND") {
+                if ($f -like "backend/*" -and $f -notlike "backend/runtime/*") { $relevant += $f }
+              } else {
+                if ($f -like "backend/runtime/*") { $relevant += $f }
+              }
+            }
+            if ($relevant.Count -gt 0) {
+              Write-Error ("[FAIL] {0}_RUN_ID={1} : {2} fichier(s) source modifie(s) depuis le run, ex. {3} -- reconstruire CE composant" -f $pair[0], $pair[1], $relevant.Count, $relevant[0])
+              $stale = $true
+            } else {
+              Write-Host ("[OK] {0} : aucun fichier source de ce composant n a change depuis le run ({1} fichiers compares au total) -- pas de reconstruction necessaire" -f $pair[0], $files.Count)
             }
           }
           if ($stale) { exit 1 }
-          Write-Host "[OK] Both artifacts are built from current main."
+          Write-Host "[OK] Les deux artefacts correspondent a leur code source."
 
       # -- 5. Validate artifact binaries ----------------------------------------
       - name: Validate artifact binaries
