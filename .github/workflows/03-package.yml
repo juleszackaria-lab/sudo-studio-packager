@@ -10,7 +10,7 @@ on:
     tags: ['v*']
 
 env:
-  # P71 pins: workflows 01 + 02 ont tourne sur Sudo-studio main 8b08b42
+  # P71 pins: workflows 01 + 02 ont tourne sur Sudo-studio main 7fb886f
   # (P70 chemin rapide sans modele + P71 recommandations deterministes,
   #  enrichissement IA borne, AutoFix verifie, Doctor registre, AutoFix npm).
   # (P67 catalogue, P68 grammaire + fenetre de contexte, P69 : medecine
@@ -18,12 +18,12 @@ env:
   # fusion des chargements, message RAM, et C7 - le moteur tourne dans un
   # processus enfant, l'API survit a son plantage).
   # Bump both ids AND SUDO_STUDIO_REF together whenever the reference moves.
-  BACKEND_RUN_ID: "45821628580"
-  RUNTIME_RUN_ID: "45821631756"
+  BACKEND_RUN_ID: "45831450046"
+  RUNTIME_RUN_ID: "45831453838"
   # Reference du code Sudo-studio : la TETE de main au moment des builds 01/02.
   # P69 : tout le travail est sur main (aucune branche), donc le paquet est
   # construit depuis main et le garde-fou compare les pins a ce commit.
-  SUDO_STUDIO_REF: "8b08b42c463fbabb6992d02b76e13c4e641cc28d"
+  SUDO_STUDIO_REF: "7fb886fc37f2921fd47439b17b6fa2ca4cb26167"
 
 jobs:
   build:
