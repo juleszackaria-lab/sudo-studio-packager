@@ -171,13 +171,25 @@ jobs:
               $stale = $true
               continue
             }
+            # BACKEND : backend/** sauf runtime/** (autre composant) et sauf
+            # backend/tests/** qui n est PAS embarque dans backend.exe (pkg
+            # n embarque que routes/, middleware/, models/, utils/,
+            # controllers/, security/, config/, supervisor/, data/ -- les tests
+            # tournent AVANT le build). Les fichiers ignores sont affiches.
             $relevant = @()
+            $ignored = @()
             foreach ($f in $files) {
               if ($pair[0] -eq "BACKEND") {
-                if ($f -like "backend/*" -and $f -notlike "backend/runtime/*") { $relevant += $f }
+                if ($f -like "backend/runtime/*") { continue }
+                if ($f -like "backend/*") {
+                  if ($f -like "backend/tests/*") { $ignored += $f } else { $relevant += $f }
+                }
               } else {
                 if ($f -like "backend/runtime/*") { $relevant += $f }
               }
+            }
+            if ($ignored.Count -gt 0) {
+              Write-Host ("[INFO] {0} : {1} fichier(s) de test non embarques, ignores : {2}" -f $pair[0], $ignored.Count, ($ignored -join ', '))
             }
             if ($relevant.Count -gt 0) {
               Write-Error ("[FAIL] {0}_RUN_ID={1} : {2} fichier(s) source modifie(s) depuis le run, ex. {3} -- reconstruire CE composant" -f $pair[0], $pair[1], $relevant.Count, $relevant[0])
